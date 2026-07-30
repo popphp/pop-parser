@@ -594,6 +594,12 @@ class AddressParser extends AbstractParser
         $usZipRegex    = '/^\d{5}(-\d{4})?$/';
         $usZip9Regex   = '/^\d{9}$/';
         $caPostalRegex = '/^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/i';
+        $poBoxRegex    = '/^(P\.?O\.?\s*Box|POB|Box)$/i';
+
+        $looksLikePoBoxLine = function(array $line) use ($poBoxRegex): bool {
+            return (preg_match($poBoxRegex, str_replace(' ', '', $line[0])) === 1)
+                || ((count($line) >= 2) && (strcasecmp(str_replace('.', '', $line[0]), 'PO') === 0) && (strcasecmp($line[1], 'Box') === 0));
+        };
 
         $lineKeys = array_keys($tokens);
         rsort($lineKeys);
@@ -783,9 +789,9 @@ class AddressParser extends AbstractParser
                     } else {
                         // Fall back to the nearest preceding unconsumed line. If that line
                         // still looks like it carries the street (a route-type boundary can be
-                        // found in it, or it starts with a number), don't swallow it whole as
-                        // city - split it the same way, or hand it back unsplit for street
-                        // parsing, rather than silently discarding the street.
+                        // found in it, it starts with a number, or it's a PO Box line), don't
+                        // swallow it whole as city - split it the same way, or hand it back
+                        // unsplit for street parsing, rather than silently discarding the street.
                         foreach ($lineKeys as $i) {
                             if (($i < $stateLine) && !in_array($i, $linesProcessed)) {
                                 $candidateLine = $tokens[$i];
@@ -797,7 +803,7 @@ class AddressParser extends AbstractParser
                                         $city = null;
                                     }
                                     $trimmedLines[$i] = array_slice($candidateLine, 0, $routeEndIndex + 1);
-                                } else if (preg_match('/^\d/', $candidateLine[0]) === 1) {
+                                } else if ((preg_match('/^\d/', $candidateLine[0]) === 1) || $looksLikePoBoxLine($candidateLine)) {
                                     $trimmedLines[$i] = $candidateLine;
                                 } else {
                                     $city = implode(' ', $candidateLine);
@@ -891,20 +897,23 @@ class AddressParser extends AbstractParser
         );
         $poBoxRegex = '/^(P\.?O\.?\s*Box|POB|Box)$/i';
 
-        // Pick the primary (street) line: the first remaining line that actually looks like a
-        // street - starts with a number, ends in a recognized route-type word, or matches the
-        // PO Box pattern. This matters when a non-street line sorts ahead of the real street
-        // line (e.g. a recipient name: "John Smith, 123 Main St, ..."); without this, the
-        // recipient name would be mistaken for the street name and the real street silently
-        // dropped. Falls back to the first line when nothing qualifies.
+        // Pick the primary (street) line: the first remaining line with STRONG evidence of
+        // being the street - a leading number AND a trailing route-type word together, or a
+        // match for the PO Box pattern. This matters when a non-street line sorts ahead of the
+        // real street line (e.g. a recipient name: "John Smith, 123 Main St, ..."); without
+        // it, the recipient name would be mistaken for the street name and the real street
+        // silently dropped. Requiring BOTH signals (not just one) matters just as much: a line
+        // that only weakly matches one signal - e.g. "4th Floor" starts with a digit but isn't
+        // a street - must not be promoted over the true street line just because that line
+        // (e.g. "Broadway") has no recognizable route-type suffix of its own. Falls back to
+        // the first line when nothing qualifies.
         $primaryIndex = 0;
         foreach ($lines as $idx => $line) {
             $lastLineIndex = count($line) - 1;
             $looksLikePoBox = (preg_match($poBoxRegex, str_replace(' ', '', $line[0])) === 1)
                 || ((count($line) >= 2) && (strcasecmp(str_replace('.', '', $line[0]), 'PO') === 0) && (strcasecmp($line[1], 'Box') === 0));
-            $looksLikeStreet = (preg_match('/^\d/', $line[0]) === 1)
-                || (in_array(strtolower(rtrim($line[$lastLineIndex], '.')), $routeTypes, true))
-                || $looksLikePoBox;
+            $looksLikeStreet = $looksLikePoBox
+                || ((preg_match('/^\d/', $line[0]) === 1) && (in_array(strtolower(rtrim($line[$lastLineIndex], '.')), $routeTypes, true)));
             if ($looksLikeStreet) {
                 $primaryIndex = $idx;
                 break;

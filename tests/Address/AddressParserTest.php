@@ -295,6 +295,39 @@ class AddressParserTest extends TestCase
         $this->assertEquals('Springfield', $parser->getCity());
     }
 
+    /**
+     * Regression test: extractLocation() only promotes a non-first line to "primary" when
+     * it has strong evidence of being the street (a leading number AND a trailing
+     * route-type word). A line that only weakly matches one signal - e.g. "4th Floor"
+     * starts with a digit but isn't a street - must not be promoted over the real street
+     * line ("Broadway") just because the real street line has no recognizable route-type
+     * suffix of its own.
+     */
+    public function testParseDoesNotPromoteAWeaklyMatchingLaterLineOverAStreetWithNoRouteType(): void
+    {
+        $parser = new AddressParser();
+        $parser->parse('Broadway, 4th Floor, New York, NY 10001');
+
+        $this->assertEquals('Broadway', $parser->getStreetName(false));
+        $this->assertEquals('New York', $parser->getCity());
+    }
+
+    /**
+     * Regression test: a PO Box address with no city given must still be recognized as a
+     * PO Box, not swallowed whole as a garbage city value.
+     */
+    public function testParsePoBoxWithNoCityGivenIsNotSwallowedAsCity(): void
+    {
+        $parser = new AddressParser();
+        $parser->parse('PO Box 1234, IL 62704');
+
+        $this->assertTrue($parser->isPoBox());
+        $this->assertEquals('PO Box 1234', $parser->getStreetName(false));
+        $this->assertNull($parser->getCity());
+        $this->assertEquals('IL', $parser->getStateCode());
+        $this->assertEquals('62704', $parser->getPostalCode());
+    }
+
     public function testHasMethodsDefaultToFalseBeforeParsing(): void
     {
         $parser = new AddressParser();
