@@ -727,16 +727,21 @@ class AddressParser extends AbstractParser
                             $addressValues->getCommonRouteTypes()
                         );
 
-                        // Use the FIRST route-type match, not the last: some city/place
-                        // names ("Beverly Hills") end in a word that's also a valid route
-                        // type ("Hills"), so taking the last match would mistake the city
-                        // name's tail for the street's route suffix.
+                        // Prefer the RIGHTMOST route-type match that still leaves at least
+                        // one token after it (for a city). Neither "first" nor "last" alone
+                        // works: taking the last match breaks when a city name itself ends in
+                        // a route-type word ("Beverly Hills" - "Hills" is a valid suffix), and
+                        // taking the first match breaks when the street name itself starts
+                        // with a route-type word ("Park Ave ...", "Circle Dr ..."). A match
+                        // with nothing after it is far more likely to be the tail of the city
+                        // name than the street's actual route suffix, since a route suffix is
+                        // normally followed by a city.
                         $routeEndIndex = null;
+                        $lastBeforeIndex = count($before) - 1;
                         foreach ($before as $idx => $word) {
                             $routeCandidate = strtolower(rtrim($word, '.'));
-                            if (in_array($routeCandidate, $routeTypes, true)) {
+                            if (in_array($routeCandidate, $routeTypes, true) && ($idx < $lastBeforeIndex)) {
                                 $routeEndIndex = $idx;
-                                break;
                             }
                         }
 
