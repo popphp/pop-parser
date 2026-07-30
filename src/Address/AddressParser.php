@@ -475,7 +475,9 @@ class AddressParser extends AbstractParser
 
         $remainingLines = [];
         foreach ($tokens as $i => $lineTokens) {
-            if (!in_array($i, $geoResults['linesProcessed'])) {
+            if (isset($geoResults['trimmedLines'][$i])) {
+                $remainingLines[] = $geoResults['trimmedLines'][$i];
+            } else if (!in_array($i, $geoResults['linesProcessed'])) {
                 $remainingLines[] = $lineTokens;
             }
         }
@@ -565,7 +567,7 @@ class AddressParser extends AbstractParser
      * Works right-to-left over the tokenized lines, using token *position* rather than
      * substring matching: the postal code anchors everything else, the state is the token
      * immediately before it, the city is whatever precedes the state within that same
-     * segment (or the entire preceding segment), and the country is only recognized as a
+     * segment (or the entirely preceding segment), and the country is only recognized as a
      * distinct segment outside the state slot. This ordering is what keeps a state code
      * like "CA" from ever being mistaken for the country code "CA".
      *
@@ -584,6 +586,7 @@ class AddressParser extends AbstractParser
         $country    = null;
 
         $linesProcessed = [];
+        $trimmedLines   = [];
 
         $usStates = $addressValues->getStates('US');
         $caStates = $addressValues->getStates('CA');
@@ -668,25 +671,41 @@ class AddressParser extends AbstractParser
             }
 
             if ($stateLine !== null) {
-                $candidate      = $tokens[$stateLine][$stateIndex];
-                $candidateUpper = strtoupper($candidate);
+                // Try progressively longer token spans ending at $stateIndex (longest first),
+                // so multi-word state/province names ("New York", "District of Columbia",
+                // "Prince Edward Island") resolve, not just the single trailing token.
+                $stateSpanStart = $stateIndex;
 
-                if (($country === 'US') && (strlen($candidate) === 2) && isset($usStates[$candidateUpper])) {
-                    $state     = $candidateUpper;
-                    $stateCode = $candidateUpper;
-                    $stateName = $usStates[$candidateUpper];
-                } else if (($country === 'CA') && (strlen($candidate) === 2) && isset($caStates[$candidateUpper])) {
-                    $state     = $candidateUpper;
-                    $stateCode = $candidateUpper;
-                    $stateName = $caStates[$candidateUpper];
-                } else if (($fullMatch = array_search($candidate, $usStates)) !== false) {
-                    $state     = $candidate;
-                    $stateCode = $fullMatch;
-                    $stateName = $candidate;
-                } else if (($fullMatch = array_search($candidate, $caStates)) !== false) {
-                    $state     = $candidate;
-                    $stateCode = $fullMatch;
-                    $stateName = $candidate;
+                for ($span = min(3, $stateIndex + 1); $span >= 1; $span--) {
+                    $spanStart      = $stateIndex - $span + 1;
+                    $candidate      = implode(' ', array_slice($tokens[$stateLine], $spanStart, $span));
+                    $candidateUpper = strtoupper($candidate);
+
+                    if (($country === 'US') && ($span === 1) && (strlen($candidate) === 2) && isset($usStates[$candidateUpper])) {
+                        $state          = $candidateUpper;
+                        $stateCode      = $candidateUpper;
+                        $stateName      = $usStates[$candidateUpper];
+                        $stateSpanStart = $spanStart;
+                        break;
+                    } else if (($country === 'CA') && ($span === 1) && (strlen($candidate) === 2) && isset($caStates[$candidateUpper])) {
+                        $state          = $candidateUpper;
+                        $stateCode      = $candidateUpper;
+                        $stateName      = $caStates[$candidateUpper];
+                        $stateSpanStart = $spanStart;
+                        break;
+                    } else if (($fullMatch = array_search($candidate, $usStates)) !== false) {
+                        $state          = $candidate;
+                        $stateCode      = $fullMatch;
+                        $stateName      = $candidate;
+                        $stateSpanStart = $spanStart;
+                        break;
+                    } else if (($fullMatch = array_search($candidate, $caStates)) !== false) {
+                        $state          = $candidate;
+                        $stateCode      = $fullMatch;
+                        $stateName      = $candidate;
+                        $stateSpanStart = $spanStart;
+                        break;
+                    }
                 }
 
                 if ($state !== null) {
@@ -695,9 +714,41 @@ class AddressParser extends AbstractParser
                     }
 
                     // City: remaining tokens before the state, in the same line
-                    $before = array_slice($tokens[$stateLine], 0, $stateIndex);
+                    $before = array_slice($tokens[$stateLine], 0, $stateSpanStart);
                     if (!empty($before)) {
-                        $city = implode(' ', $before);
+                        // This line carries city AND (with no comma to separate them) possibly
+                        // the street portion too. Find where the street portion ends (its
+                        // route-type suffix, if any) so city only takes what's left over, and
+                        // hand the leading portion back for street parsing rather than losing
+                        // it. If no route-type boundary can be found, city is left unguessed
+                        // (null) rather than swallowing words that might be street, not city.
+                        $routeTypes = array_merge(
+                            array_map('strtolower', $addressValues->getRouteTypes(true)),
+                            $addressValues->getCommonRouteTypes()
+                        );
+
+                        // Use the FIRST route-type match, not the last: some city/place
+                        // names ("Beverly Hills") end in a word that's also a valid route
+                        // type ("Hills"), so taking the last match would mistake the city
+                        // name's tail for the street's route suffix.
+                        $routeEndIndex = null;
+                        foreach ($before as $idx => $word) {
+                            $routeCandidate = strtolower(rtrim($word, '.'));
+                            if (in_array($routeCandidate, $routeTypes, true)) {
+                                $routeEndIndex = $idx;
+                                break;
+                            }
+                        }
+
+                        if ($routeEndIndex !== null) {
+                            $city = implode(' ', array_slice($before, $routeEndIndex + 1));
+                            if ($city === '') {
+                                $city = null;
+                            }
+                            $trimmedLines[$stateLine] = array_slice($before, 0, $routeEndIndex + 1);
+                        } else {
+                            $trimmedLines[$stateLine] = $before;
+                        }
                     } else {
                         // Fall back to the entirety of the nearest preceding unconsumed line
                         foreach ($lineKeys as $i) {
@@ -712,10 +763,14 @@ class AddressParser extends AbstractParser
             }
         }
 
-        // Country is only recognized as a distinct, unconsumed segment (never the state slot)
+        // Country is only recognized as a distinct, unconsumed segment (never the state slot).
+        // Bare two-letter codes ("US"/"CA") are deliberately excluded here - only unambiguous
+        // full forms are accepted - because a bare "CA" can only safely be trusted as a state
+        // when the state-slot mechanism above resolves it; without a postal code to anchor
+        // that slot, a bare "CA" segment must not silently become "Canada" instead.
         $countryLineValues = [
-            'US' => ['US', 'USA', 'U S A', 'UNITED STATES'],
-            'CA' => ['CA', 'CAN', 'CANADA'],
+            'US' => ['USA', 'U S A', 'UNITED STATES'],
+            'CA' => ['CAN', 'CANADA'],
         ];
 
         foreach ($lineKeys as $i) {
@@ -746,6 +801,7 @@ class AddressParser extends AbstractParser
             'zip4'           => $zip4,
             'country'        => $country,
             'linesProcessed' => $linesProcessed,
+            'trimmedLines'   => $trimmedLines,
         ];
     }
 
@@ -781,18 +837,28 @@ class AddressParser extends AbstractParser
 
         $unitTypes = array_map('strtoupper', $addressValues->getUnitTypes());
 
-        $isUnitToken = function(string $word) use ($unitTypes): bool {
-            return in_array(strtoupper(rtrim($word, '.')), $unitTypes, true) || str_starts_with($word, '#');
-        };
-
-        // A trailing (non-primary) line is only pulled in as a unit. Anything else trailing
-        // is left alone rather than merged into the street name.
+        // A trailing (non-primary) line is only pulled in as a unit if it looks like one: a
+        // recognized designator word co-occurring with a digit (e.g. "Apt 3B"), or a bare
+        // "#..." token. A designator word alone isn't enough - several unit-type words
+        // ("Front", "Rear", "Lobby", "Pier", "Side", "Fl", ...) are also ordinary English
+        // words that appear in real street names, so requiring a digit too is what keeps an
+        // unrecognized line like "FL" (a state, with no zip to anchor it) from being
+        // mistaken for a unit. Anything that doesn't qualify is left alone rather than
+        // merged into the street name.
         foreach (array_slice($lines, 1) as $line) {
+            $hasDesignator = false;
+            $hasDigit      = false;
             foreach ($line as $word) {
-                if ($isUnitToken($word)) {
-                    $unit = implode(' ', $line);
-                    break 2;
+                if (in_array(strtoupper(rtrim($word, '.')), $unitTypes, true)) {
+                    $hasDesignator = true;
                 }
+                if (preg_match('/\d/', $word) === 1) {
+                    $hasDigit = true;
+                }
+            }
+            if (($hasDesignator && $hasDigit) || str_starts_with($line[0], '#')) {
+                $unit = implode(' ', $line);
+                break;
             }
         }
 
@@ -808,7 +874,7 @@ class AddressParser extends AbstractParser
                 'routeType'         => null,
                 'direction'         => null,
                 'directionPosition' => null,
-                'unit'              => null,
+                'unit'              => $unit,
                 'isPoBox'           => true,
             ];
         }
@@ -821,24 +887,27 @@ class AddressParser extends AbstractParser
                 'routeType'         => null,
                 'direction'         => null,
                 'directionPosition' => null,
-                'unit'              => null,
+                'unit'              => $unit,
                 'isPoBox'           => true,
             ];
         }
 
-        // Unit designator within the primary line: whole-token match
+        // Unit designator within the primary line: anchored to the tail (a bare "#..." last
+        // token, or a recognized designator word immediately followed by a value token that
+        // contains a digit). Anchoring here - rather than scanning the whole line - is what
+        // keeps a street name like "123 Front St" or "500 Pier Rd" from having its second
+        // word mistaken for a unit designator; "Front"/"Pier" are unit-type words too, but
+        // "St"/"Rd" right after them don't look like a unit value.
         if ($unit === null) {
-            foreach ($tokens as $i => $word) {
-                $normalized = strtoupper(rtrim($word, '.'));
-                if (in_array($normalized, $unitTypes, true) && isset($tokens[$i + 1])) {
-                    $unit = $tokens[$i] . ' ' . $tokens[$i + 1];
-                    array_splice($tokens, $i, 2);
-                    break;
-                }
-                if (str_starts_with($word, '#')) {
-                    $unit = $word;
-                    array_splice($tokens, $i, 1);
-                    break;
+            $lastIndex = count($tokens) - 1;
+            if (($lastIndex >= 0) && str_starts_with($tokens[$lastIndex], '#')) {
+                $unit = $tokens[$lastIndex];
+                array_splice($tokens, $lastIndex, 1);
+            } else if ($lastIndex >= 1) {
+                $designatorCandidate = strtoupper(rtrim($tokens[$lastIndex - 1], '.'));
+                if (in_array($designatorCandidate, $unitTypes, true) && (preg_match('/\d/', $tokens[$lastIndex]) === 1)) {
+                    $unit = $tokens[$lastIndex - 1] . ' ' . $tokens[$lastIndex];
+                    array_splice($tokens, $lastIndex - 1, 2);
                 }
             }
         }
