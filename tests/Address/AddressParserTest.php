@@ -216,6 +216,85 @@ class AddressParserTest extends TestCase
         $this->assertFalse($parser->isPoBox());
     }
 
+    /**
+     * Regression test: a comma-less address whose CITY ends in a word that's also a
+     * valid route-type suffix ("Beverly Hills" - "Hills" is a real route-type word) must
+     * not have that word mistaken for the street's route type.
+     */
+    public function testParseCommaLessAddressWithCityEndingInRouteTypeWord(): void
+    {
+        $parser = new AddressParser();
+        $parser->parse('2 Rodeo Dr Beverly Hills CA 90210');
+
+        $this->assertEquals('2', $parser->getStreetNumber());
+        $this->assertEquals('Rodeo', $parser->getStreetName(false));
+        $this->assertEquals('Dr', $parser->getRouteType());
+        $this->assertEquals('Beverly Hills', $parser->getCity());
+    }
+
+    /**
+     * Regression test: a comma-less address whose STREET NAME starts with a word that's
+     * also a valid route-type word ("Park Ave" - "Park" is a real route-type word) must
+     * not have that word mistaken for the street's route type.
+     */
+    public function testParseCommaLessAddressWithStreetNameStartingInRouteTypeWord(): void
+    {
+        $parser = new AddressParser();
+        $parser->parse('123 Park Ave Springfield IL 62701');
+
+        $this->assertEquals('Park', $parser->getStreetName(false));
+        $this->assertEquals('Ave', $parser->getRouteType());
+        $this->assertEquals('Springfield', $parser->getCity());
+    }
+
+    /**
+     * Regression test: a leading non-street line (e.g. a recipient name) must not be
+     * mistaken for the street name, and the real street line further down must not be
+     * silently dropped.
+     */
+    public function testParseDoesNotMistakeALeadingRecipientLineForTheStreet(): void
+    {
+        $parser = new AddressParser();
+        $parser->parse('John Smith, 123 Main St, Springfield, IL 62704');
+
+        $this->assertEquals('123', $parser->getStreetNumber());
+        $this->assertEquals('Main', $parser->getStreetName(false));
+        $this->assertEquals('St', $parser->getRouteType());
+        $this->assertEquals('Springfield', $parser->getCity());
+    }
+
+    /**
+     * Regression test: when no city is given at all (state immediately follows the
+     * street, with nothing between them), the street must still parse correctly and
+     * city must be left null rather than swallowing the street as a "city".
+     */
+    public function testParseWithNoCityLeavesCityNullWithoutLosingTheStreet(): void
+    {
+        $parser = new AddressParser();
+        $parser->parse('123 Main St, IL 62704');
+
+        $this->assertEquals('123', $parser->getStreetNumber());
+        $this->assertEquals('Main', $parser->getStreetName(false));
+        $this->assertEquals('St', $parser->getRouteType());
+        $this->assertNull($parser->getCity());
+    }
+
+    /**
+     * Regression test: a single comma separating "street" from "city state zip" (no
+     * comma between city and state) must still recognize the city rather than silently
+     * dropping it.
+     */
+    public function testParseWithSingleCommaBeforeCityStateZipStillFindsCity(): void
+    {
+        $parser = new AddressParser();
+        $parser->parse('123 Main St, Springfield IL 62704');
+
+        $this->assertEquals('123', $parser->getStreetNumber());
+        $this->assertEquals('Main', $parser->getStreetName(false));
+        $this->assertEquals('St', $parser->getRouteType());
+        $this->assertEquals('Springfield', $parser->getCity());
+    }
+
     public function testHasMethodsDefaultToFalseBeforeParsing(): void
     {
         $parser = new AddressParser();

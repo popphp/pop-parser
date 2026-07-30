@@ -713,52 +713,96 @@ class AddressParser extends AbstractParser
                         $linesProcessed[] = $stateLine;
                     }
 
-                    // City: remaining tokens before the state, in the same line
-                    $before = array_slice($tokens[$stateLine], 0, $stateSpanStart);
-                    if (!empty($before)) {
-                        // This line carries city AND (with no comma to separate them) possibly
-                        // the street portion too. Find where the street portion ends (its
-                        // route-type suffix, if any) so city only takes what's left over, and
-                        // hand the leading portion back for street parsing rather than losing
-                        // it. If no route-type boundary can be found, city is left unguessed
-                        // (null) rather than swallowing words that might be street, not city.
-                        $routeTypes = array_merge(
-                            array_map('strtolower', $addressValues->getRouteTypes(true)),
-                            $addressValues->getCommonRouteTypes()
-                        );
+                    // A comma already separated an earlier segment from this one if any lower
+                    // line index exists at all - in that case, whatever precedes the state
+                    // in THIS line's own tokens (or the nearest preceding line, if this line's
+                    // "before" is empty) is unambiguously city, because the street already got
+                    // its own segment earlier. Only when there's no preceding segment - a truly
+                    // comma-less single-line address - can this line's leading tokens be a
+                    // street/city hybrid that needs the route-type-boundary split below.
+                    $hasPrecedingLine = false;
+                    foreach ($lineKeys as $i) {
+                        if ($i < $stateLine) {
+                            $hasPrecedingLine = true;
+                            break;
+                        }
+                    }
 
-                        // Prefer the RIGHTMOST route-type match that still leaves at least
-                        // one token after it (for a city). Neither "first" nor "last" alone
-                        // works: taking the last match breaks when a city name itself ends in
-                        // a route-type word ("Beverly Hills" - "Hills" is a valid suffix), and
-                        // taking the first match breaks when the street name itself starts
-                        // with a route-type word ("Park Ave ...", "Circle Dr ..."). A match
-                        // with nothing after it is far more likely to be the tail of the city
-                        // name than the street's actual route suffix, since a route suffix is
-                        // normally followed by a city.
-                        $routeEndIndex = null;
-                        $lastBeforeIndex = count($before) - 1;
-                        foreach ($before as $idx => $word) {
+                    $routeTypes = array_merge(
+                        array_map('strtolower', $addressValues->getRouteTypes(true)),
+                        $addressValues->getCommonRouteTypes()
+                    );
+
+                    // Prefer the RIGHTMOST route-type match that still leaves at least
+                    // one token after it (for a city). Neither "first" nor "last" alone
+                    // works: taking the last match breaks when a city name itself ends in
+                    // a route-type word ("Beverly Hills" - "Hills" is a valid suffix), and
+                    // taking the first match breaks when the street name itself starts
+                    // with a route-type word ("Park Ave ...", "Circle Dr ..."). A match
+                    // with nothing after it is far more likely to be the tail of the city
+                    // name than the street's actual route suffix, since a route suffix is
+                    // normally followed by a city.
+                    $findRouteBoundary = function(array $span) use ($routeTypes): ?int {
+                        $routeEndIndex   = null;
+                        $lastSpanIndex   = count($span) - 1;
+                        foreach ($span as $idx => $word) {
                             $routeCandidate = strtolower(rtrim($word, '.'));
-                            if (in_array($routeCandidate, $routeTypes, true) && ($idx < $lastBeforeIndex)) {
+                            if (in_array($routeCandidate, $routeTypes, true) && ($idx < $lastSpanIndex)) {
                                 $routeEndIndex = $idx;
                             }
                         }
+                        return $routeEndIndex;
+                    };
 
-                        if ($routeEndIndex !== null) {
-                            $city = implode(' ', array_slice($before, $routeEndIndex + 1));
-                            if ($city === '') {
-                                $city = null;
-                            }
-                            $trimmedLines[$stateLine] = array_slice($before, 0, $routeEndIndex + 1);
+                    // City: remaining tokens before the state, in the same line
+                    $before = array_slice($tokens[$stateLine], 0, $stateSpanStart);
+                    if (!empty($before)) {
+                        if ($hasPrecedingLine) {
+                            // A comma already separates this from the street - it's just city.
+                            $city = implode(' ', $before);
                         } else {
-                            $trimmedLines[$stateLine] = $before;
+                            // This line carries city AND (with no comma to separate them)
+                            // possibly the street portion too. Find where the street portion
+                            // ends (its route-type suffix, if any) so city only takes what's
+                            // left over, and hand the leading portion back for street parsing
+                            // rather than losing it. If no route-type boundary can be found,
+                            // city is left unguessed (null) rather than swallowing words that
+                            // might be street, not city.
+                            $routeEndIndex = $findRouteBoundary($before);
+
+                            if ($routeEndIndex !== null) {
+                                $city = implode(' ', array_slice($before, $routeEndIndex + 1));
+                                if ($city === '') {
+                                    $city = null;
+                                }
+                                $trimmedLines[$stateLine] = array_slice($before, 0, $routeEndIndex + 1);
+                            } else {
+                                $trimmedLines[$stateLine] = $before;
+                            }
                         }
                     } else {
-                        // Fall back to the entirety of the nearest preceding unconsumed line
+                        // Fall back to the nearest preceding unconsumed line. If that line
+                        // still looks like it carries the street (a route-type boundary can be
+                        // found in it, or it starts with a number), don't swallow it whole as
+                        // city - split it the same way, or hand it back unsplit for street
+                        // parsing, rather than silently discarding the street.
                         foreach ($lineKeys as $i) {
                             if (($i < $stateLine) && !in_array($i, $linesProcessed)) {
-                                $city             = implode(' ', $tokens[$i]);
+                                $candidateLine = $tokens[$i];
+                                $routeEndIndex = $findRouteBoundary($candidateLine);
+
+                                if ($routeEndIndex !== null) {
+                                    $city = implode(' ', array_slice($candidateLine, $routeEndIndex + 1));
+                                    if ($city === '') {
+                                        $city = null;
+                                    }
+                                    $trimmedLines[$i] = array_slice($candidateLine, 0, $routeEndIndex + 1);
+                                } else if (preg_match('/^\d/', $candidateLine[0]) === 1) {
+                                    $trimmedLines[$i] = $candidateLine;
+                                } else {
+                                    $city = implode(' ', $candidateLine);
+                                }
+
                                 $linesProcessed[] = $i;
                                 break;
                             }
@@ -841,6 +885,34 @@ class AddressParser extends AbstractParser
         }
 
         $unitTypes = array_map('strtoupper', $addressValues->getUnitTypes());
+        $routeTypes = array_merge(
+            array_map('strtolower', $addressValues->getRouteTypes(true)),
+            $addressValues->getCommonRouteTypes()
+        );
+        $poBoxRegex = '/^(P\.?O\.?\s*Box|POB|Box)$/i';
+
+        // Pick the primary (street) line: the first remaining line that actually looks like a
+        // street - starts with a number, ends in a recognized route-type word, or matches the
+        // PO Box pattern. This matters when a non-street line sorts ahead of the real street
+        // line (e.g. a recipient name: "John Smith, 123 Main St, ..."); without this, the
+        // recipient name would be mistaken for the street name and the real street silently
+        // dropped. Falls back to the first line when nothing qualifies.
+        $primaryIndex = 0;
+        foreach ($lines as $idx => $line) {
+            $lastLineIndex = count($line) - 1;
+            $looksLikePoBox = (preg_match($poBoxRegex, str_replace(' ', '', $line[0])) === 1)
+                || ((count($line) >= 2) && (strcasecmp(str_replace('.', '', $line[0]), 'PO') === 0) && (strcasecmp($line[1], 'Box') === 0));
+            $looksLikeStreet = (preg_match('/^\d/', $line[0]) === 1)
+                || (in_array(strtolower(rtrim($line[$lastLineIndex], '.')), $routeTypes, true))
+                || $looksLikePoBox;
+            if ($looksLikeStreet) {
+                $primaryIndex = $idx;
+                break;
+            }
+        }
+
+        $secondaryLines = $lines;
+        unset($secondaryLines[$primaryIndex]);
 
         // A trailing (non-primary) line is only pulled in as a unit if it looks like one: a
         // recognized designator word co-occurring with a digit (e.g. "Apt 3B"), or a bare
@@ -850,7 +922,7 @@ class AddressParser extends AbstractParser
         // unrecognized line like "FL" (a state, with no zip to anchor it) from being
         // mistaken for a unit. Anything that doesn't qualify is left alone rather than
         // merged into the street name.
-        foreach (array_slice($lines, 1) as $line) {
+        foreach ($secondaryLines as $line) {
             $hasDesignator = false;
             $hasDigit      = false;
             foreach ($line as $word) {
@@ -867,10 +939,9 @@ class AddressParser extends AbstractParser
             }
         }
 
-        $tokens = $lines[0];
+        $tokens = $lines[$primaryIndex];
 
         // PO Box, e.g. "PO Box 1234", "P.O. Box 1234", "POB 1234", "Box 1234"
-        $poBoxRegex = '/^(P\.?O\.?\s*Box|POB|Box)$/i';
         if ((count($tokens) >= 2) && (preg_match($poBoxRegex, str_replace(' ', '', $tokens[0])) === 1)
             && (preg_match('/^\d+[A-Za-z]?$/', $tokens[1]) === 1)) {
             return [
@@ -945,10 +1016,6 @@ class AddressParser extends AbstractParser
         // Route type: only recognized as the last remaining token, not merely present
         // anywhere in the street name (this is what fixes e.g. "Park" in "Park Granada"
         // being mistaken for a route-type suffix).
-        $routeTypes = array_merge(
-            array_map('strtolower', $addressValues->getRouteTypes(true)),
-            $addressValues->getCommonRouteTypes()
-        );
         if (!empty($tokens)) {
             $lastIndex = count($tokens) - 1;
             $candidate = strtolower(rtrim($tokens[$lastIndex], '.'));
