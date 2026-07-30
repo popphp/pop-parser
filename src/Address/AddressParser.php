@@ -14,6 +14,7 @@
 namespace Pop\Parser\Address;
 
 use Pop\Parser\AbstractParser;
+use Pop\Parser\Exception;
 
 /**
  * Address parser class
@@ -99,6 +100,12 @@ class AddressParser extends AbstractParser
      * @var ?string
      * */
     protected ?string $country = null;
+
+    /**
+     * PO Box flag
+     * @var bool
+     * */
+    protected bool $isPoBox = false;
 
     /**
      * Method to get street number
@@ -331,6 +338,16 @@ class AddressParser extends AbstractParser
     }
 
     /**
+     * Is PO Box
+     *
+     * @return bool
+     */
+    public function isPoBox(): bool
+    {
+        return $this->isPoBox;
+    }
+
+    /**
      * Method to get full address
      *
      * @param  string $delimiter
@@ -410,14 +427,18 @@ class AddressParser extends AbstractParser
      */
     public function parseStreetAddress(string $streetAddress): array
     {
-        $streetArray        = $this->clean($streetAddress);
-        $addressValues      = new AddressValues();
-        $locationResults    = $this->parseLocation($streetArray, $addressValues);
-        $this->streetNumber = $locationResults['streetNumber']['value'];
-        $this->streetName   = $locationResults['streetName']['value'];
-        $this->routeType    = $locationResults['route']['value'];
-        $this->direction    = $locationResults['direction']['value'];
-        $this->unit         = $locationResults['unit']['value'];
+        $addressValues    = new AddressValues();
+        $lines            = $this->clean($streetAddress);
+        $tokens           = $this->tokenize($lines);
+        $locationResults  = $this->extractLocation($tokens, $addressValues);
+
+        $this->streetNumber      = $locationResults['streetNumber'];
+        $this->streetName        = $locationResults['streetName'];
+        $this->routeType         = $locationResults['routeType'];
+        $this->direction         = $locationResults['direction'];
+        $this->directionPosition = $locationResults['directionPosition'];
+        $this->unit               = $locationResults['unit'];
+        $this->isPoBox            = $locationResults['isPoBox'];
 
         return [
             'streetNumber' => $this->streetNumber,
@@ -448,45 +469,32 @@ class AddressParser extends AbstractParser
         }
 
         $addressValues = new AddressValues();
-        $addressArray  = $this->clean($address);
-        $geoResults    = $this->parseGeo($addressArray, $addressValues);
+        $lines         = $this->clean($address);
+        $tokens        = $this->tokenize($lines);
+        $geoResults    = $this->extractGeo($tokens, $addressValues);
 
-        $streetArray = [];
-
-        // Build street array from remaining unprocessed lines
-        if (!empty($geoResults['linesProcessed'])) {
-            foreach ($addressArray as $i => $addressLine) {
-                if (!in_array($i, $geoResults['linesProcessed'])) {
-                    $streetArray[] = $addressLine;
-                }
-            }
-        } else {
-            $streetArray = $addressArray;
-        }
-
-        $locationResults    = $this->parseLocation($streetArray, $addressValues);
-        $this->streetNumber = $locationResults['streetNumber']['value'];
-        $this->streetName   = $locationResults['streetName']['value'];
-        $this->routeType    = $locationResults['route']['value'];
-        $this->direction    = $locationResults['direction']['value'];
-        $this->unit         = $locationResults['unit']['value'];
-        $this->city         = $geoResults['city']['value'];
-        $this->postalCode   = $geoResults['postalCode']['value'];
-        $this->zip4         = $geoResults['zip4']['value'];
-        $this->stateName    = $geoResults['state']['stateName'];
-        $this->stateCode    = $geoResults['state']['stateCode'];
-        $this->country      = $geoResults['country']['value'];
-
-        if (!empty($locationResults['direction']['value']) && !empty($locationResults['direction']['position']) &&
-            !empty($locationResults['streetName']['value']) && !empty($locationResults['streetName']['position'])) {
-            if ($locationResults['direction']['position'][0] == $locationResults['streetName']['position'][0]) {
-                if ($locationResults['direction']['position'][1] < $locationResults['streetName']['position'][1]) {
-                    $this->directionPosition = 0;
-                } else if ($locationResults['direction']['position'][1] > $locationResults['streetName']['position'][1]) {
-                    $this->directionPosition = 1;
-                }
+        $remainingLines = [];
+        foreach ($tokens as $i => $lineTokens) {
+            if (!in_array($i, $geoResults['linesProcessed'])) {
+                $remainingLines[] = $lineTokens;
             }
         }
+
+        $locationResults = $this->extractLocation($remainingLines, $addressValues);
+
+        $this->streetNumber      = $locationResults['streetNumber'];
+        $this->streetName        = $locationResults['streetName'];
+        $this->routeType         = $locationResults['routeType'];
+        $this->direction         = $locationResults['direction'];
+        $this->directionPosition = $locationResults['directionPosition'];
+        $this->unit               = $locationResults['unit'];
+        $this->isPoBox            = $locationResults['isPoBox'];
+        $this->city               = $geoResults['city'];
+        $this->postalCode         = $geoResults['postalCode'];
+        $this->zip4               = $geoResults['zip4'];
+        $this->stateName          = $geoResults['stateName'];
+        $this->stateCode          = $geoResults['stateCode'];
+        $this->country            = $geoResults['country'];
 
         return $this;
     }
@@ -532,148 +540,171 @@ class AddressParser extends AbstractParser
     }
 
     /**
-     * Parse geo (country, postal, city and state)
+     * Tokenize method
      *
-     * @param  array         $addressArray
+     * Splits each cleaned line into an array of whitespace-delimited word tokens, keyed by
+     * the original line index.
+     *
+     * @param  array $lines
+     * @return array
+     */
+    protected function tokenize(array $lines): array
+    {
+        $tokens = [];
+
+        foreach ($lines as $i => $line) {
+            $tokens[$i] = preg_split('/\s+/', trim($line));
+        }
+
+        return $tokens;
+    }
+
+    /**
+     * Extract geo (country, postal code, state and city)
+     *
+     * Works right-to-left over the tokenized lines, using token *position* rather than
+     * substring matching: the postal code anchors everything else, the state is the token
+     * immediately before it, the city is whatever precedes the state within that same
+     * segment (or the entire preceding segment), and the country is only recognized as a
+     * distinct segment outside the state slot. This ordering is what keeps a state code
+     * like "CA" from ever being mistaken for the country code "CA".
+     *
+     * @param  array         $tokens
      * @param  AddressValues $addressValues
      * @return array
      */
-    public function parseGeo(array $addressArray, AddressValues $addressValues): array
+    protected function extractGeo(array $tokens, AddressValues $addressValues): array
     {
-        $city           = null;
-        $state          = null;
-        $stateName      = null;
-        $stateCode      = null;
-        $postalCode     = null;
-        $zip4           = null;
-        $country        = null;
-        $cityPos        = null;
-        $statePos       = null;
-        $postalCodePos  = null;
-        $zip4Pos        = null;
-        $countryPos     = null;
+        $city       = null;
+        $state      = null;
+        $stateName  = null;
+        $stateCode  = null;
+        $postalCode = null;
+        $zip4       = null;
+        $country    = null;
+
         $linesProcessed = [];
 
-        $countries = [
-            'US' => ['US', 'U.S.', 'USA', 'U.S.A', 'United States'],
-            'CA' => ['CA', 'CAN', 'Canada']
-        ];
+        $usStates = $addressValues->getStates('US');
+        $caStates = $addressValues->getStates('CA');
 
-        $postalRegex = [
-            'US' => '/(\d{9})|(\d{5}-\d{4}|(\d{5}))/',      // US Zip Code
-            'CA' => '/[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d/i' // CA Postal Code
-        ];
+        $usZipRegex    = '/^\d{5}(-\d{4})?$/';
+        $usZip9Regex   = '/^\d{9}$/';
+        $caPostalRegex = '/^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/i';
 
-        $usStates      = $addressValues->getStates('US');
-        $caStates      = $addressValues->getStates('CA');
-        $usStatesRegex = '/' . implode('|', array_keys($usStates)) . '|' . implode('|', array_values($usStates)) . '/i';
-        $caStatesRegex = '/' . implode('|', array_keys($caStates)) . '|' . implode('|', array_values($caStates)) . '/i';
-        $usRegex       = '/' . implode('|', $countries['US']) . '/i';
-        $caRegex       = '/' . implode('|', $countries['CA']) . '/i';
+        $lineKeys = array_keys($tokens);
+        rsort($lineKeys);
 
-        krsort($addressArray);
+        $postalLine  = null;
+        $postalIndex = null;
 
-        foreach ($addressArray as $i => $address) {
-            $cityMatches    = [];
-            $stateMatches   = [];
-            $postalMatches  = [];
-            $countryMatches = [];
+        // Find the postal code, scanning lines and tokens from the end backward
+        foreach ($lineKeys as $i) {
+            $lineTokens = $tokens[$i];
+            $count      = count($lineTokens);
 
-            // Attempt to find the country
-            if (empty($country)) {
-                if (preg_match($caRegex, $address, $countryMatches, PREG_OFFSET_CAPTURE) === 1) {
-                    $country = 'CA';
-                } else if (preg_match($usRegex, $address, $countryMatches, PREG_OFFSET_CAPTURE) === 1) {
-                    $country = 'US';
+            for ($t = $count - 1; $t >= 0; $t--) {
+                $word = $lineTokens[$t];
+
+                if ((preg_match($usZipRegex, $word) === 1) || (preg_match($usZip9Regex, $word) === 1)) {
+                    $postalCode  = $word;
+                    $postalLine  = $i;
+                    $postalIndex = $t;
+                    $country     = 'US';
+                    break 2;
                 }
 
-                if (isset($countryMatches[0]) && isset($countryMatches[0][0])) {
-                    $country = $countryMatches[0][0];
-                    if (isset($countryMatches[0][1])) {
-                        $countryPos = [$i, $countryMatches[0][1]];
-                        if (!in_array($i, $linesProcessed)) {
-                            $linesProcessed[] = $i;
-                        }
+                if (preg_match($caPostalRegex, $word) === 1) {
+                    $postalCode  = $word;
+                    $postalLine  = $i;
+                    $postalIndex = $t;
+                    $country     = 'CA';
+                    break 2;
+                }
+
+                // Canadian postal codes are sometimes written with an internal space, e.g. "M4B 1B3"
+                if ($t > 0) {
+                    $joined = $lineTokens[$t - 1] . ' ' . $word;
+                    if (preg_match($caPostalRegex, $joined) === 1) {
+                        $postalCode  = str_replace(' ', '', $joined);
+                        $postalLine  = $i;
+                        $postalIndex = $t - 1;
+                        $country     = 'CA';
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        if ($postalCode !== null) {
+            $linesProcessed[] = $postalLine;
+
+            if ($country === 'US') {
+                if (strpos($postalCode, '-') !== false) {
+                    [$postalCode, $zip4] = explode('-', $postalCode);
+                } else if (strlen($postalCode) === 9) {
+                    $zip4       = substr($postalCode, -4);
+                    $postalCode = substr($postalCode, 0, 5);
+                }
+            }
+
+            // The state slot is the token immediately before the postal code, on the same
+            // line. If the postal code is the first token of its line, fall back to the
+            // last token of the nearest preceding unconsumed line.
+            $stateLine  = null;
+            $stateIndex = null;
+
+            if ($postalIndex > 0) {
+                $stateLine  = $postalLine;
+                $stateIndex = $postalIndex - 1;
+            } else {
+                foreach ($lineKeys as $i) {
+                    if (($i < $postalLine) && !in_array($i, $linesProcessed)) {
+                        $stateLine  = $i;
+                        $stateIndex = count($tokens[$i]) - 1;
+                        break;
                     }
                 }
             }
 
-            // Attempt to find postal code
-            if (empty($postalCode)) {
-                if (preg_match($postalRegex['CA'], $address, $postalMatches, PREG_OFFSET_CAPTURE) === 1) {
-                    $country = 'CA';
-                    if (isset($postalMatches[0]) && isset($postalMatches[0][0])) {
-                        $postalCode = $postalMatches[0][0];
-                        if (isset($postalMatches[0][1])) {
-                            $postalCodePos = [$i, $postalMatches[0][1]];
-                            if (!in_array($i, $linesProcessed)) {
+            if ($stateLine !== null) {
+                $candidate      = $tokens[$stateLine][$stateIndex];
+                $candidateUpper = strtoupper($candidate);
+
+                if (($country === 'US') && (strlen($candidate) === 2) && isset($usStates[$candidateUpper])) {
+                    $state     = $candidateUpper;
+                    $stateCode = $candidateUpper;
+                    $stateName = $usStates[$candidateUpper];
+                } else if (($country === 'CA') && (strlen($candidate) === 2) && isset($caStates[$candidateUpper])) {
+                    $state     = $candidateUpper;
+                    $stateCode = $candidateUpper;
+                    $stateName = $caStates[$candidateUpper];
+                } else if (($fullMatch = array_search($candidate, $usStates)) !== false) {
+                    $state     = $candidate;
+                    $stateCode = $fullMatch;
+                    $stateName = $candidate;
+                } else if (($fullMatch = array_search($candidate, $caStates)) !== false) {
+                    $state     = $candidate;
+                    $stateCode = $fullMatch;
+                    $stateName = $candidate;
+                }
+
+                if ($state !== null) {
+                    if (!in_array($stateLine, $linesProcessed)) {
+                        $linesProcessed[] = $stateLine;
+                    }
+
+                    // City: remaining tokens before the state, in the same line
+                    $before = array_slice($tokens[$stateLine], 0, $stateIndex);
+                    if (!empty($before)) {
+                        $city = implode(' ', $before);
+                    } else {
+                        // Fall back to the entirety of the nearest preceding unconsumed line
+                        foreach ($lineKeys as $i) {
+                            if (($i < $stateLine) && !in_array($i, $linesProcessed)) {
+                                $city             = implode(' ', $tokens[$i]);
                                 $linesProcessed[] = $i;
-                            }
-                        }
-                    }
-                } else {
-                    preg_match_all($postalRegex['US'], $address, $postalMatches, PREG_OFFSET_CAPTURE);
-                    $postalMatches = $this->filterMatches($postalMatches, true);
-
-                    // Single line zip code
-                    if ((count($postalMatches) == 1) && isset($postalMatches[0]) && isset($postalMatches[0][0]) &&
-                        isset($postalMatches[0][1]) && (($postalMatches[0][1] != 0) || ($postalMatches[0][1] == 0) && (strlen($postalMatches[0][0]) == strlen($address)))) {
-                        $postalCode    = $postalMatches[0][0];
-                        $postalCodePos = [$i, $postalMatches[0][1]];
-                        if (!in_array($i, $linesProcessed)) {
-                            $linesProcessed[] = $i;
-                        }
-                    // Found another match that's possibly the address number, use the one at the end of the line
-                    } else if (count($postalMatches) > 1) {
-                        $lastMatch     = end($postalMatches);
-                        $postalCode    = $lastMatch[0];
-                        $postalCodePos = [$i, $lastMatch[1]];
-                        if (!in_array($i, $linesProcessed)) {
-                            $linesProcessed[] = $i;
-                        }
-                    }
-
-                    if (!empty($postalCode) && empty($country)) {
-                        $country = 'US';
-                    }
-                }
-            }
-
-            // Attempt to find the state
-            if (empty($state)) {
-                if ($country == 'CA') {
-                    preg_match($caStatesRegex, $address, $stateMatches, PREG_OFFSET_CAPTURE);
-                } else if ($country == 'US') {
-                    preg_match($usStatesRegex, $address, $stateMatches, PREG_OFFSET_CAPTURE);
-                }
-            }
-
-            if (!empty($stateMatches)) {
-                if (isset($stateMatches[0]) && isset($stateMatches[0][0])) {
-                    $state = $stateMatches[0][0];
-                    if (isset($stateMatches[0][1])) {
-                        $statePos = [$i, $stateMatches[0][1]];
-                        if (!in_array($i, $linesProcessed)) {
-                            $linesProcessed[] = $i;
-                        }
-                    }
-                }
-            }
-
-            // Attempt to find city
-            if (!empty($state) && !empty($country) && empty($city)) {
-                $cities = $addressValues->getCities($state, $country);
-                if (is_array($cities) && !empty($cities)) {
-                    $citiesRegex = '/' . implode('|', $cities) . '/i';
-                    preg_match($citiesRegex, $address, $cityMatches, PREG_OFFSET_CAPTURE);
-                    if (!empty($cityMatches)) {
-                        if (isset($cityMatches[0]) && isset($cityMatches[0][0])) {
-                            $city = $cityMatches[0][0];
-                            if (isset($cityMatches[0][1])) {
-                                $cityPos = [$i, $cityMatches[0][1]];
-                                if (!in_array($i, $linesProcessed)) {
-                                    $linesProcessed[] = $i;
-                                }
+                                break;
                             }
                         }
                     }
@@ -681,194 +712,192 @@ class AddressParser extends AbstractParser
             }
         }
 
-        // Get state name
-        if (!empty($state)) {
-            if ((strlen($state) == 2) && isset($usStates[$state])) {
-                $stateName = $usStates[$state];
-                $stateCode = $state;
-            } else if ((strlen($state) > 2) && in_array($state, $usStates)) {
-                $stateCode = array_search($state, $usStates);
-                $stateName = $state;
-            }
-        }
+        // Country is only recognized as a distinct, unconsumed segment (never the state slot)
+        $countryLineValues = [
+            'US' => ['US', 'USA', 'U S A', 'UNITED STATES'],
+            'CA' => ['CA', 'CAN', 'CANADA'],
+        ];
 
-        // Attempt to get the zip 4
-        if (($country == 'US') && !empty($postalCode)) {
-            if (strpos($postalCode, '-') !== false) {
-                [$postalCode, $zip4] = array_map('trim', explode('-', $postalCode));
-                $zip4Pos             = $postalCodePos;
-                $zip4Pos[1]         += 6;
-            } else if (strlen($postalCode) == 9) {
-                $zip4       = substr($postalCode, -4);
-                $postalCode = substr($postalCode, 0, 5);
-                $zip4Pos     = $postalCodePos;
-                $zip4Pos[1] += 5;
+        foreach ($lineKeys as $i) {
+            if (in_array($i, $linesProcessed)) {
+                continue;
+            }
+
+            $normalizedLine = strtoupper(str_replace('.', '', implode(' ', $tokens[$i])));
+
+            if (in_array($normalizedLine, $countryLineValues['CA'], true)) {
+                $country          = 'CA';
+                $linesProcessed[] = $i;
+                break;
+            }
+
+            if (in_array($normalizedLine, $countryLineValues['US'], true)) {
+                $country          = 'US';
+                $linesProcessed[] = $i;
+                break;
             }
         }
 
         return [
-            'city'           => ['value' => $city, 'position' => $cityPos],
-            'state'          => ['value' => $state, 'position' => $statePos, 'stateName' => $stateName, 'stateCode' => $stateCode],
-            'postalCode'     => ['value' => $postalCode, 'position' => $postalCodePos],
-            'zip4'           => ['value' => $zip4, 'position' => $zip4Pos],
-            'country'        => ['value' => $country, 'position' => $countryPos],
+            'city'           => $city,
+            'stateName'      => $stateName,
+            'stateCode'      => $stateCode,
+            'postalCode'     => $postalCode,
+            'zip4'           => $zip4,
+            'country'        => $country,
             'linesProcessed' => $linesProcessed,
         ];
     }
 
     /**
-     * Parse location (street address)
+     * Extract street/location details (PO Box, unit, direction, route type, street number/name)
      *
-     * @param  array         $streetArray
+     * Operates on whatever lines extractGeo() didn't consume. The primary (first) line is
+     * where the street number, name, route type and direction are extracted from; a
+     * secondary line is only pulled in if it looks like a unit (e.g. a comma-separated
+     * "Apt 3B" segment) so that an unrecognized trailing line (e.g. a city extractGeo()
+     * couldn't place) is never merged into the street name. Each step removes the tokens it
+     * claims before the next step runs, so nothing can be claimed twice.
+     *
+     * @param  array         $lines
      * @param  AddressValues $addressValues
      * @return array
      */
-    public function parseLocation(array $streetArray, AddressValues $addressValues): array
+    protected function extractLocation(array $lines, AddressValues $addressValues): array
     {
-        $streetNumber    = null;
-        $streetName      = null;
-        $route           = null;
-        $unit            = null;
-        $direction       = null;
-        $streetNumberPos = null;
-        $streetNamePos   = null;
-        $routePos        = null;
-        $unitPos         = null;
-        $directionPos    = null;
-        $linesProcessed  = [];
+        $lines = array_values($lines);
 
+        $streetNumber      = null;
+        $streetName        = null;
+        $routeType         = null;
+        $unit              = null;
+        $direction         = null;
+        $directionPosition = null;
+        $isPoBox           = false;
 
-        $commonRoutes      = $addressValues->getCommonRouteTypes();
-        $routes            = $addressValues->getRouteTypes(true);
-        $directions        = $addressValues->getDirections();
-        $commonRoutesRegex = '/\s' . implode('(\s|,|\.)|\s', $commonRoutes) . '/i';
-        $routesRegex       = '/\s' . implode('(\s|,|\.)|\s', $routes) . '/i';
-        $directionsRegex   = '/' . str_replace('.', '\.', implode('|', $directions)) . '/i';
+        if (empty($lines)) {
+            return compact('streetNumber', 'streetName', 'routeType', 'direction', 'directionPosition', 'unit', 'isPoBox');
+        }
 
-        foreach ($streetArray as $i => $address) {
-            $routeMatches     = [];
-            $directionMatches = [];
+        $unitTypes = array_map('strtoupper', $addressValues->getUnitTypes());
 
-            if (!str_starts_with($address, ' ')) {
-                $address = ' ' . $address;
-            }
-            if (!str_ends_with($address, ' ')) {
-                $address = $address . ' ';
-            }
+        $isUnitToken = function(string $word) use ($unitTypes): bool {
+            return in_array(strtoupper(rtrim($word, '.')), $unitTypes, true) || str_starts_with($word, '#');
+        };
 
-            // Attempt to find the country
-            if (empty($route)) {
-                preg_match($commonRoutesRegex, $address, $routeMatches, PREG_OFFSET_CAPTURE);
-                if (empty($routeMatches)) {
-                    preg_match($routesRegex, $address, $routeMatches, PREG_OFFSET_CAPTURE);
-                }
-                if (!empty($routeMatches)) {
-                    if (isset($routeMatches[0]) && isset($routeMatches[0][0])) {
-                        $route = $routeMatches[0][0];
-                        if (isset($routeMatches[0][1])) {
-                            $routePos = [$i, $routeMatches[0][1]];
-                            if (!in_array($i, $linesProcessed)) {
-                                $linesProcessed[] = $i;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Attempt to find the direction
-            if (empty($direction)) {
-                preg_match($directionsRegex, $address, $directionMatches, PREG_OFFSET_CAPTURE);
-                if (!empty($directionMatches)) {
-                    if (isset($directionMatches[0]) && isset($directionMatches[0][0])) {
-                        $direction = trim($directionMatches[0][0]);
-                        if (isset($directionMatches[0][1])) {
-                            $directionPos = [$i, $directionMatches[0][1]];
-                            if (!in_array($i, $linesProcessed)) {
-                                $linesProcessed[] = $i;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Attempt to find the unit
-            if (!empty($route) && !empty($routePos) && empty($unit)) {
-                $curLine = ($routePos[0] != $i) ? $streetArray[$routePos[0]] : $address;
-                $unit    = substr($curLine, ($routePos[1] + strlen($route)));
-                $unitPos = [$routePos[0], $routePos[0] + strlen($unit)];
-                $unit    = trim($unit);
-                if (($unit == '.') || ($unit == ',')) {
-                    $unit = null;
-                }
-            }
-
-            // Attempt to find the street address
-            if (!empty($route) && !empty($routePos) && empty($streetName)) {
-                $curLine = ($routePos[0] != $i) ? $streetArray[$routePos[0]] : $address;
-                $street  = substr($curLine, 0, $routePos[1]);
-
-                if (!empty($direction) && strpos($street, $direction) !== false) {
-                    $street = str_replace($direction, '', $street);
-                }
-
-                $street = trim(preg_replace('/\s+/', ' ', $street));
-
-                // Assume "123 Main"
-                if (strpos($street, ' ') !== false) {
-                    $streetNumber = trim(substr($street, 0, strpos($street, ' ')));
-                    $streetName   = trim(substr($street, (strpos($street, ' ') + 1)));
-
-                    $streetNumberPos = [$routePos[0], strpos($address, $streetNumber)];
-                    $streetNamePos   = [$routePos[0], strpos($address, $streetName)];
-                } else {
-                    // Assume either a street number or name
-                    if (is_numeric($street)) {
-                        $streetNumber    = $street;
-                        $streetNumberPos = [$routePos[0], strpos($address, $street)];
-                    } else {
-                        $streetName    = $street;
-                        $streetNamePos = [$routePos[0], strpos($address, $street)];
-                    }
+        // A trailing (non-primary) line is only pulled in as a unit. Anything else trailing
+        // is left alone rather than merged into the street name.
+        foreach (array_slice($lines, 1) as $line) {
+            foreach ($line as $word) {
+                if ($isUnitToken($word)) {
+                    $unit = implode(' ', $line);
+                    break 2;
                 }
             }
         }
 
-        return [
-            'streetNumber'   => ['value' => $streetNumber, 'position' => $streetNumberPos],
-            'streetName'     => ['value' => $streetName, 'position' => $streetNamePos],
-            'route'          => ['value' => $route, 'position' => $routePos],
-            'unit'           => ['value' => $unit, 'position' => $unitPos],
-            'direction'      => ['value' => $direction, 'position' => $directionPos],
-            'linesProcessed' => $linesProcessed,
-        ];
-    }
+        $tokens = $lines[0];
 
-    /**
-     * Filter out empty matches
-     *
-     * @param  array $matches
-     * @param  bool  $withOffset
-     * @return array
-     */
-    protected function filterMatches(array $matches, bool $withOffset = false): array
-    {
-        $filteredMatches = [];
+        // PO Box, e.g. "PO Box 1234", "P.O. Box 1234", "POB 1234", "Box 1234"
+        $poBoxRegex = '/^(P\.?O\.?\s*Box|POB|Box)$/i';
+        if ((count($tokens) >= 2) && (preg_match($poBoxRegex, str_replace(' ', '', $tokens[0])) === 1)
+            && (preg_match('/^\d+[A-Za-z]?$/', $tokens[1]) === 1)) {
+            return [
+                'streetNumber'      => null,
+                'streetName'        => 'PO Box ' . $tokens[1],
+                'routeType'         => null,
+                'direction'         => null,
+                'directionPosition' => null,
+                'unit'              => null,
+                'isPoBox'           => true,
+            ];
+        }
+        // "PO" "Box" "1234" as three separate tokens (e.g. from "P.O. Box 1234")
+        if ((count($tokens) >= 3) && (strcasecmp(str_replace('.', '', $tokens[0]), 'PO') === 0)
+            && (strcasecmp($tokens[1], 'Box') === 0) && (preg_match('/^\d+[A-Za-z]?$/', $tokens[2]) === 1)) {
+            return [
+                'streetNumber'      => null,
+                'streetName'        => 'PO Box ' . $tokens[2],
+                'routeType'         => null,
+                'direction'         => null,
+                'directionPosition' => null,
+                'unit'              => null,
+                'isPoBox'           => true,
+            ];
+        }
 
-        foreach ($matches as $match) {
-            foreach ($match as $m) {
-                if ($withOffset) {
-                    if (isset($m[0]) && isset($m[0][1]) && ($m[0][1] != -1) && !in_array($m, $filteredMatches)) {
-                        $filteredMatches[] = $m;
-                    }
-                } else {
-                    if (!empty($m) && !in_array($m, $filteredMatches)) {
-                        $filteredMatches[] = $m;
-                    }
+        // Unit designator within the primary line: whole-token match
+        if ($unit === null) {
+            foreach ($tokens as $i => $word) {
+                $normalized = strtoupper(rtrim($word, '.'));
+                if (in_array($normalized, $unitTypes, true) && isset($tokens[$i + 1])) {
+                    $unit = $tokens[$i] . ' ' . $tokens[$i + 1];
+                    array_splice($tokens, $i, 2);
+                    break;
+                }
+                if (str_starts_with($word, '#')) {
+                    $unit = $word;
+                    array_splice($tokens, $i, 1);
+                    break;
                 }
             }
         }
 
-        return $filteredMatches;
+        // Direction: recognized only as a prefix (immediately after the street number) or a
+        // suffix (the very last remaining token) - never in the middle of the street name.
+        $directionSet = [];
+        foreach ($addressValues->getDirections() as $value) {
+            $directionSet[strtoupper(trim($value))] = true;
+        }
+
+        if (count($tokens) > 1) {
+            $prefixCandidate = strtoupper(rtrim($tokens[1], '.'));
+            if (isset($directionSet[$prefixCandidate])) {
+                $direction         = $tokens[1];
+                $directionPosition = 0;
+                array_splice($tokens, 1, 1);
+            }
+        }
+        if (($direction === null) && (count($tokens) > 1)) {
+            $lastIndex       = count($tokens) - 1;
+            $suffixCandidate = strtoupper(rtrim($tokens[$lastIndex], '.'));
+            if (isset($directionSet[$suffixCandidate])) {
+                $direction         = $tokens[$lastIndex];
+                $directionPosition = 1;
+                array_splice($tokens, $lastIndex, 1);
+            }
+        }
+
+        // Route type: only recognized as the last remaining token, not merely present
+        // anywhere in the street name (this is what fixes e.g. "Park" in "Park Granada"
+        // being mistaken for a route-type suffix).
+        $routeTypes = array_merge(
+            array_map('strtolower', $addressValues->getRouteTypes(true)),
+            $addressValues->getCommonRouteTypes()
+        );
+        if (!empty($tokens)) {
+            $lastIndex = count($tokens) - 1;
+            $candidate = strtolower(rtrim($tokens[$lastIndex], '.'));
+            if (in_array($candidate, $routeTypes, true)) {
+                $routeType = $tokens[$lastIndex];
+                array_splice($tokens, $lastIndex, 1);
+            }
+        }
+
+        // Street number / name
+        if (!empty($tokens)) {
+            if (preg_match('/^\d/', $tokens[0]) === 1) {
+                $streetNumber = $tokens[0];
+                $streetName   = implode(' ', array_slice($tokens, 1));
+            } else {
+                $streetName = implode(' ', $tokens);
+            }
+            if ($streetName === '') {
+                $streetName = null;
+            }
+        }
+
+        return compact('streetNumber', 'streetName', 'routeType', 'direction', 'directionPosition', 'unit', 'isPoBox');
     }
 
     /**
