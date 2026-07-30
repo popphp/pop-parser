@@ -24,20 +24,14 @@
     "require-dev": {
         "phpunit/phpunit": "^12.5.0"
     },
-    "suggest": {
-        "ext-gd": "For added images to PDFs",
-        "ext-iconv": "For string conversion",
-        "ext-mbstring": "For working with multi-byte string",
-        "ext-zlib": "For compression"
-    },
     "autoload": {
         "psr-4": {
-            "Pop\\Pdf\\": "src/"
+            "Pop\\Parser\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Pop\\Pdf\\Test\\": "tests/"
+            "Pop\\Parser\\Test\\": "tests/"
         }
     },
     "scripts": {

@@ -6,11 +6,11 @@
          displayDetailsOnPhpunitDeprecations="true">
   <coverage>
     <report>
-      <html outputDirectory="/tmp/pop-pdf-cc" lowUpperBound="35" highLowerBound="70"/>
+      <html outputDirectory="/tmp/pop-parser-cc" lowUpperBound="35" highLowerBound="70"/>
     </report>
   </coverage>
   <testsuites>
-    <testsuite name="Pop PDF Component PHPUnit Test">
+    <testsuite name="Pop Parser Component PHPUnit Test">
       <directory>tests</directory>
     </testsuite>
   </testsuites>
