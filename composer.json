@@ -1,0 +1,52 @@
+{
+    "name": "popphp/pop-parser",
+    "description": "PHP name and address parsing optional component of the Pop PHP Framework",
+    "keywords": [
+        "name parsing",
+        "address parsing",
+        "php",
+        "pop",
+        "pop php"
+    ],
+    "homepage": "http://github.com/popphp/pop-parser",
+    "license": "BSD-3-Clause",
+    "authors": [
+        {
+            "name": "Nick Sagona",
+            "email": "dev@noladev.com",
+            "homepage": "https://www.popphp.org/"
+        }
+    ],
+    "require": {
+        "php": ">=8.4.0",
+        "theiconic/name-parser": "^v1.2.11"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^12.5.0"
+    },
+    "suggest": {
+        "ext-gd": "For added images to PDFs",
+        "ext-iconv": "For string conversion",
+        "ext-mbstring": "For working with multi-byte string",
+        "ext-zlib": "For compression"
+    },
+    "autoload": {
+        "psr-4": {
+            "Pop\\Pdf\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Pop\\Pdf\\Test\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit"
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "5.2.x-dev"
+        }
+    }
+}
+
