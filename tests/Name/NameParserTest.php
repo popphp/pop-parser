@@ -380,6 +380,85 @@ class NameParserTest extends TestCase
         $this->assertEquals('Jr', $parser->getLastname());
     }
 
+    /**
+     * Regression test: a lastname prefix in the comma-mode lastname segment (segment 1)
+     * must still be recognized and must not swallow or lose the firstname that comes from
+     * segment 2.
+     */
+    public function testParseCommaModeLastnamePrefixInFirstSegment(): void
+    {
+        $parser = new NameParser();
+        $parser->parse('van Allen, James');
+
+        $this->assertEquals('James', $parser->getFirstname());
+        $this->assertEquals('van', $parser->getLastnamePrefix());
+        $this->assertEquals('Allen', $parser->getLastname());
+    }
+
+    /**
+     * Regression test: a comma-mode lastname segment with a leading word that ISN'T a
+     * recognized prefix (a compound surname with no prefix marker) must not lose that word
+     * - it merges into middlename rather than being silently dropped or overwriting
+     * segment 2's firstname.
+     */
+    public function testParseCommaModeCompoundLastnameLeftoverIsNotLost(): void
+    {
+        $parser = new NameParser();
+        $parser->parse('Garcia Marquez, Gabriel');
+
+        $this->assertEquals('Gabriel', $parser->getFirstname());
+        $this->assertEquals('Garcia', $parser->getMiddlename());
+        $this->assertEquals('Marquez', $parser->getLastname());
+    }
+
+    /**
+     * Regression test: a third comma segment that isn't a recognized suffix must not be
+     * silently discarded.
+     */
+    public function testParseCommaModeThirdSegmentNonSuffixIsNotLost(): void
+    {
+        $parser = new NameParser();
+        $parser->parse('Smith, John, Michael');
+
+        $this->assertEquals('John', $parser->getFirstname());
+        $this->assertEquals('Michael', $parser->getMiddlename());
+        $this->assertEquals('Smith', $parser->getLastname());
+    }
+
+    /**
+     * Regression test: an all-uppercase or all-lowercase word with accented/multibyte
+     * characters must still be title-cased correctly (not corrupted by splitting the word
+     * at the non-ASCII character).
+     */
+    public function testParseNormalizesAccentedMonotoneCaseWords(): void
+    {
+        $lowercase = new NameParser();
+        $lowercase->parse('etna übel');
+        $this->assertEquals('Übel', $lowercase->getLastname());
+
+        $uppercase = new NameParser();
+        $uppercase->parse('JOSÉ GARCÍA');
+        $this->assertEquals('José', $uppercase->getFirstname());
+        $this->assertEquals('García', $uppercase->getLastname());
+    }
+
+    /**
+     * Regression test: calling parse() a second time on the same instance must not
+     * accumulate state from the first call - fields that are built by concatenation
+     * (salutation, suffix) must reset, not append.
+     */
+    public function testParseResetsStateBetweenRepeatedCallsOnSameInstance(): void
+    {
+        $parser = new NameParser();
+        $parser->parse('Dr. John Smith Jr.');
+        $parser->parse('Mrs. Jane Doe Sr.');
+
+        $this->assertEquals('Mrs.', $parser->getSalutation());
+        $this->assertEquals('Jane', $parser->getFirstname());
+        $this->assertEquals('Doe', $parser->getLastname());
+        $this->assertEquals('Sr', $parser->getSuffix());
+    }
+
     public function testCleanNormalizesWhitespace(): void
     {
         $parser = new NameParser();
