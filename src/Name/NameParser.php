@@ -442,7 +442,15 @@ class NameParser extends AbstractParser
             $this->absorbLeftovers($segment2);
         }
 
-        // Now absorb whatever segment 1 didn't claim - after segment 2, per the comment above.
+        // Now that segment 2 has had its chance to claim the firstname slot: if it didn't
+        // (firstname is still null), segment 1's leftover IS the given name, so split it the
+        // normal way (first word -> firstname, the rest -> middlename) rather than joining it
+        // into one string. If segment 2 already provided a firstname, segment 1's leftover is
+        // secondary content - absorbLeftovers() merges the whole thing into middlename.
+        if ($this->firstname === null) {
+            $segment1 = $this->extractFirstname($segment1);
+            $segment1 = $this->extractMiddlename($segment1);
+        }
         $this->absorbLeftovers($segment1);
 
         // Segment 3 (after a second comma, if present): suffix only, with any non-suffix

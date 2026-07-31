@@ -282,6 +282,23 @@ class NameParserTest extends TestCase
         $this->assertEquals('III PhD', $parser->getSuffix());
     }
 
+    /**
+     * Regression test: when segment 1's leftover is what ends up becoming the given name
+     * (segment 2 didn't supply one) AND that leftover has more than one word, it must still
+     * split into firstname (first word) and middlename (the rest) - not collapse into a
+     * single firstname string.
+     */
+    public function testParseCommaModeFirstSegmentMultiWordLeftoverSplitsIntoFirstnameAndMiddlename(): void
+    {
+        $parser = new NameParser();
+        $parser->parse('John Michael Smith, MD');
+
+        $this->assertEquals('John', $parser->getFirstname());
+        $this->assertEquals('Michael', $parser->getMiddlename());
+        $this->assertEquals('Smith', $parser->getLastname());
+        $this->assertEquals('MD', $parser->getSuffix());
+    }
+
     public function testParseCommaModeWithInitial(): void
     {
         $parser = new NameParser();
