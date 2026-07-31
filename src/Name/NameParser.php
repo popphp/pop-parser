@@ -320,7 +320,7 @@ class NameParser extends AbstractParser
             $tokens        = $this->extractNickname($tokens, $nameValues);
             $tokens        = $this->extractSalutation($tokens, $nameValues);
             $tokens        = $this->extractSuffix($tokens, $nameValues, 2);
-            $tokens        = $this->extractInitials($tokens, false);
+            $tokens        = $this->extractInitials($tokens, false, $nameValues);
             $tokens        = $this->extractLastname($tokens, $nameValues, false, $originalCount);
             $tokens        = $this->extractFirstname($tokens);
             $tokens        = $this->extractMiddlename($tokens);
@@ -436,7 +436,7 @@ class NameParser extends AbstractParser
             $segment2 = $this->extractSalutation($segment2, $nameValues);
             $segment2 = $this->extractSuffix($segment2, $nameValues, 0, true, true);
             $segment2 = $this->extractNickname($segment2, $nameValues);
-            $segment2 = $this->extractInitials($segment2, true);
+            $segment2 = $this->extractInitials($segment2, true, $nameValues);
             $segment2 = $this->extractFirstname($segment2);
             $segment2 = $this->extractMiddlename($segment2);
             $this->absorbLeftovers($segment2);
@@ -453,13 +453,19 @@ class NameParser extends AbstractParser
         }
         $this->absorbLeftovers($segment1);
 
-        // Segment 3 (after a second comma, if present): suffix only, with any non-suffix
-        // leftover absorbed rather than discarded (e.g. "Smith, John, Michael" must not lose
-        // "Michael" just because it isn't a recognized suffix).
-        if (isset($segments[2]) && ($segments[2] !== '')) {
-            $segment3 = $this->tokenize($segments[2]);
-            $segment3 = $this->extractSuffix($segment3, $nameValues, 0, true);
-            $this->absorbLeftovers($segment3);
+        // Segment 3 onward (after a second comma, if present): suffix only per segment, with
+        // any non-suffix leftover absorbed rather than discarded (e.g. "Smith, John, Michael"
+        // must not lose "Michael" just because it isn't a recognized suffix). Looping over
+        // every remaining segment - not just $segments[2] - means a name with more than 3
+        // comma-separated parts (e.g. "Smith, John, PhD, Esq") doesn't silently drop
+        // anything past the third.
+        foreach (array_slice($segments, 2) as $segment) {
+            if ($segment === '') {
+                continue;
+            }
+            $extraSegment = $this->tokenize($segment);
+            $extraSegment = $this->extractSuffix($extraSegment, $nameValues, 0, true);
+            $this->absorbLeftovers($extraSegment);
         }
     }
 
@@ -680,22 +686,30 @@ class NameParser extends AbstractParser
      * Extract initials
      *
      * A remaining single letter (optionally with a trailing period) is an initial. An
-     * all-caps 2-letter run (e.g. "JR") is split into two separate initials first. The very
-     * last remaining token is never treated as an initial unless $matchLastPart is true.
+     * all-caps 2-letter run (e.g. "JR") is split into two separate initials first - unless
+     * that run is also a recognized lastname prefix ("DE", "LA", "ST", ...), in which case
+     * it's left alone so extractLastname() can fold it as a prefix; without this guard,
+     * all-caps input like "JAMES DE LUCA" would have "DE" shredded into two fake initials
+     * before extractLastname() ever saw it. The very last remaining token is never treated
+     * as an initial unless $matchLastPart is true.
      *
-     * @param  array $tokens
-     * @param  bool  $matchLastPart
+     * @param  array      $tokens
+     * @param  bool       $matchLastPart
+     * @param  NameValues $nameValues
      * @return array
      */
-    protected function extractInitials(array $tokens, bool $matchLastPart): array
+    protected function extractInitials(array $tokens, bool $matchLastPart, NameValues $nameValues): array
     {
+        $prefixes = $nameValues->getLastnamePrefixes();
+
         $last = count($tokens) - 1;
         for ($i = 0; $i < count($tokens); $i++) {
             if (!$matchLastPart && ($i === $last)) {
                 continue;
             }
             $stripped = str_replace('.', '', $tokens[$i]);
-            if ((strlen($stripped) === 2) && ($stripped === strtoupper($stripped)) && ctype_alpha($stripped)) {
+            if ((strlen($stripped) === 2) && ($stripped === strtoupper($stripped)) && ctype_alpha($stripped)
+                && !isset($prefixes[strtolower($stripped)])) {
                 array_splice($tokens, $i, 1, [$stripped[0], $stripped[1]]);
                 $last = count($tokens) - 1;
                 $i++;

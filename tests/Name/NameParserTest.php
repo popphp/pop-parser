@@ -443,6 +443,47 @@ class NameParserTest extends TestCase
     }
 
     /**
+     * Regression test: a name with more than 3 comma-separated segments must not silently
+     * drop anything past the third segment.
+     */
+    public function testParseCommaModeFourthSegmentIsNotLost(): void
+    {
+        $parser = new NameParser();
+        $parser->parse('Smith, John, PhD, Esq');
+
+        $this->assertEquals('John', $parser->getFirstname());
+        $this->assertEquals('Smith', $parser->getLastname());
+        $this->assertEquals('PhD Esq', $parser->getSuffix());
+    }
+
+    /**
+     * Regression test: an all-caps 2-letter lastname-prefix word ("DE", "LA", "ST", "DU")
+     * must not be mistaken for two combined initials just because the input is all-caps -
+     * that heuristic exists for cases like "JR Smith", not for prefix words.
+     */
+    public function testParseAllCapsDoesNotShredLastnamePrefixIntoInitials(): void
+    {
+        $deLuca = new NameParser();
+        $deLuca->parse('JAMES DE LUCA');
+        $this->assertNull($deLuca->getInitials());
+        $this->assertEquals('de', $deLuca->getLastnamePrefix());
+        $this->assertEquals('Luca', $deLuca->getLastname());
+
+        $stJohn = new NameParser();
+        $stJohn->parse('MARY ST JOHN');
+        $this->assertNull($stJohn->getInitials());
+        $this->assertEquals('St.', $stJohn->getLastnamePrefix());
+        $this->assertEquals('John', $stJohn->getLastname());
+
+        $deLaCruz = new NameParser();
+        $deLaCruz->parse('JOSE M DE LA CRUZ JR');
+        $this->assertEquals('M', $deLaCruz->getInitials());
+        $this->assertEquals('de la', $deLaCruz->getLastnamePrefix());
+        $this->assertEquals('Cruz', $deLaCruz->getLastname());
+        $this->assertEquals('Jr', $deLaCruz->getSuffix());
+    }
+
+    /**
      * Regression test: an all-uppercase or all-lowercase word with accented/multibyte
      * characters must still be title-cased correctly (not corrupted by splitting the word
      * at the non-ASCII character).
