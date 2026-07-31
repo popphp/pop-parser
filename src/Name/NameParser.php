@@ -296,6 +296,20 @@ class NameParser extends AbstractParser
             throw new Exception('Error: You must pass a name string to the parser object.');
         }
 
+        // Several fields below are built by concatenation as extraction proceeds (e.g.
+        // consecutive salutations, multiple trailing suffixes). Reset them here so a second
+        // parse() call on the same instance starts clean rather than appending onto results
+        // from a previous call.
+        $this->salutation     = null;
+        $this->firstname      = null;
+        $this->middlename     = null;
+        $this->nickname       = null;
+        $this->initials       = null;
+        $this->lastnamePrefix = null;
+        $this->lastname       = null;
+        $this->suffix         = null;
+        $this->initialsQueue  = [];
+
         $nameValues = new NameValues();
 
         if (str_contains($name, ',')) {
@@ -372,9 +386,9 @@ class NameParser extends AbstractParser
     {
         $stripped = str_replace('.', '', $word);
 
-        if (($stripped === strtoupper($stripped)) || ($stripped === strtolower($stripped))) {
-            return preg_replace_callback('/[A-Za-z]+/', function ($matches) {
-                return ucfirst(strtolower($matches[0]));
+        if (($stripped === mb_strtoupper($stripped)) || ($stripped === mb_strtolower($stripped))) {
+            return preg_replace_callback('/\p{L}+/u', function ($matches) {
+                return mb_convert_case($matches[0], MB_CASE_TITLE);
             }, $word);
         }
 
@@ -403,19 +417,18 @@ class NameParser extends AbstractParser
     {
         $segments = array_map('trim', explode(',', $name));
 
-        // Segment 1 (before the first comma): the lastname segment. Firstname/middlename
-        // extraction always run here too (not just as a fallback when nothing else matched)
-        // since this segment can be "Lastname" alone OR "Firstname Lastname [Suffix]" -
-        // e.g. "Anthony Von Fange III, PHD" puts the whole given+last name in segment 1 and
-        // leaves segment 2 as pure additional suffix.
+        // Segment 1 (before the first comma): the lastname segment. Salutation, suffix and
+        // lastname(-with-prefix) extraction run here. Whatever's left over (e.g. "Garcia" in
+        // "Garcia Marquez, Gabriel", or a lastname-prefix word extractLastname's ordinary
+        // guards wouldn't fold at position 0) is deliberately NOT assigned to firstname here
+        // - it's carried forward and absorbed only after segment 2 runs, so it can never
+        // silently overwrite or lose to segment 2's own firstname; absorbLeftovers() merges
+        // it into middlename once firstname is already set instead.
         $segment1       = $this->tokenize($segments[0]);
         $originalCount1 = count($segment1);
         $segment1       = $this->extractSalutation($segment1, $nameValues);
         $segment1       = $this->extractSuffix($segment1, $nameValues, 0, true);
         $segment1       = $this->extractLastname($segment1, $nameValues, true, $originalCount1);
-        $segment1       = $this->extractFirstname($segment1);
-        $segment1       = $this->extractMiddlename($segment1);
-        $this->absorbLeftovers($segment1);
 
         // Segment 2 (between commas, or everything after the first comma): the given-name segment
         if (isset($segments[1]) && ($segments[1] !== '')) {
@@ -429,10 +442,16 @@ class NameParser extends AbstractParser
             $this->absorbLeftovers($segment2);
         }
 
-        // Segment 3 (after a second comma, if present): suffix only
+        // Now absorb whatever segment 1 didn't claim - after segment 2, per the comment above.
+        $this->absorbLeftovers($segment1);
+
+        // Segment 3 (after a second comma, if present): suffix only, with any non-suffix
+        // leftover absorbed rather than discarded (e.g. "Smith, John, Michael" must not lose
+        // "Michael" just because it isn't a recognized suffix).
         if (isset($segments[2]) && ($segments[2] !== '')) {
             $segment3 = $this->tokenize($segments[2]);
-            $this->extractSuffix($segment3, $nameValues, 0, true);
+            $segment3 = $this->extractSuffix($segment3, $nameValues, 0, true);
+            $this->absorbLeftovers($segment3);
         }
     }
 
@@ -743,7 +762,11 @@ class NameParser extends AbstractParser
             $word = $tokens[$index];
             $key  = strtolower(str_replace('.', '', $word));
 
-            if ($claimedAny && isset($prefixes[$key]) && ($index > 0)) {
+            // The "must be at index > 0" guard exists to always leave at least one token
+            // unclaimed for a firstname - but in singlePartOk mode (comma-mode segment 1),
+            // firstname comes from segment 2, not this segment, so there's nothing to
+            // reserve: allow folding and continued lastname-claiming all the way to index 0.
+            if ($claimedAny && isset($prefixes[$key]) && (($index > 0) || $singlePartOk)) {
                 array_unshift($prefixWords, $prefixes[$key]);
                 array_splice($tokens, $index, 1);
                 $index--;
@@ -751,7 +774,7 @@ class NameParser extends AbstractParser
             }
 
             if ($claimedAny) {
-                if ($index < 1) {
+                if (!$singlePartOk && ($index < 1)) {
                     break;
                 }
                 if (strlen($lastClaimedWord) >= 3) {
