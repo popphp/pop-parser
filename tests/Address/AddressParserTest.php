@@ -248,6 +248,45 @@ class AddressParserTest extends TestCase
     }
 
     /**
+     * Regression test: a city name whose FIRST word is also a valid route-type suffix
+     * ("Lake Forest" - "Lake" is a real route-type word, e.g. "123 Lake Dr") must not have
+     * that word mistaken for a street's route-type boundary and silently dropped. This
+     * exercises the fallback path (no comma directly before the state) that pulls the city
+     * from the nearest preceding, still-unconsumed line - that line must only ever be
+     * treated as a street/city hybrid worth splitting when it actually looks like a street
+     * (leads with a digit or is a PO Box line), never a plain, comma-delimited city-only
+     * line.
+     */
+    public function testParseCityStartingWithRouteTypeWordIsNotSplitAndDropped(): void
+    {
+        $parser = new AddressParser();
+        $parser->parse('55 Winding Way, Lake Forest, IL 60045');
+
+        $this->assertEquals('55', $parser->getStreetNumber());
+        $this->assertEquals('Winding', $parser->getStreetName(false));
+        $this->assertEquals('Way', $parser->getRouteType());
+        $this->assertEquals('Lake Forest', $parser->getCity());
+        $this->assertEquals('IL', $parser->getStateCode());
+        $this->assertEquals('60045', $parser->getPostalCode());
+    }
+
+    /**
+     * Regression test: the same bug in the degenerate two-line case (no separate street
+     * line at all, so the postal-code line's "before" segment is empty and the fallback
+     * lands directly on the city-only line) - the city must not be misread as a
+     * street/city hybrid and split, leaving a bogus route type and a null street name.
+     */
+    public function testParseCityOnlyAddressStartingWithRouteTypeWordIsNotSplit(): void
+    {
+        $parser = new AddressParser();
+        $parser->parse('Lake Forest, IL 60045');
+
+        $this->assertEquals('Lake Forest', $parser->getCity());
+        $this->assertNull($parser->getRouteType());
+        $this->assertNull($parser->getStreetName(false));
+    }
+
+    /**
      * Regression test: a leading non-street line (e.g. a recipient name) must not be
      * mistaken for the street name, and the real street line further down must not be
      * silently dropped.

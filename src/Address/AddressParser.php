@@ -748,7 +748,15 @@ class AddressParser extends AbstractParser
                     // with nothing after it is far more likely to be the tail of the city
                     // name than the street's actual route suffix, since a route suffix is
                     // normally followed by a city.
-                    $findRouteBoundary = function(array $span) use ($routeTypes): ?int {
+                    $findRouteBoundary = function(array $span) use ($routeTypes, $looksLikePoBoxLine): ?int {
+                        // A span with no digit/PO-Box evidence at its head can only plausibly be
+                        // a place name (e.g. "Lake Forest"), not a street/city hybrid - don't let
+                        // a route-type word that's also a legitimate city-name word ("Lake",
+                        // "Park", "Hills", ...) be mistaken for a street's route-type suffix here.
+                        if ((preg_match('/^\d/', $span[0]) !== 1) && !$looksLikePoBoxLine($span)) {
+                            return null;
+                        }
+
                         $routeEndIndex   = null;
                         $lastSpanIndex   = count($span) - 1;
                         foreach ($span as $idx => $word) {
