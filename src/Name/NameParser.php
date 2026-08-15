@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 /**
  * Pop PHP Framework (https://www.popphp.org/)
  *
@@ -815,9 +816,7 @@ class NameParser extends AbstractParser
             }
         }
 
-        if (!empty($lastnameWords)) {
-            $this->lastname = $this->normalizeWords($lastnameWords);
-        }
+        $this->lastname = $this->normalizeWords($lastnameWords);
         if (!empty($prefixWords)) {
             $this->lastnamePrefix = implode(' ', $prefixWords);
         }
