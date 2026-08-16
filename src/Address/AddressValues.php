@@ -229,6 +229,30 @@ class AddressValues
     ];
 
     /**
+     * Cached, length-sorted result of getCommonRouteTypes()
+     * @var ?array $commonRouteTypesSorted
+     * */
+    protected static ?array $commonRouteTypesSorted = null;
+
+    /**
+     * Cached, length-sorted result of getRouteTypes(true)
+     * @var ?array $routeTypesMerged
+     * */
+    protected static ?array $routeTypesMerged = null;
+
+    /**
+     * Cached, length-sorted result of getDirections()
+     * @var ?array $directionsMerged
+     * */
+    protected static ?array $directionsMerged = null;
+
+    /**
+     * Cached, length-sorted result of getUnitTypes()
+     * @var ?array $unitTypesMerged
+     * */
+    protected static ?array $unitTypesMerged = null;
+
+    /**
      * A list of possibly unit types
      * @var array $unitTypes
      * */
@@ -285,13 +309,17 @@ class AddressValues
      */
     public function getCommonRouteTypes(): array
     {
-        $routes = self::$commonRouteTypes;
+        if (self::$commonRouteTypesSorted === null) {
+            $routes = self::$commonRouteTypes;
 
-        usort($routes, function($a, $b) {
-            return strlen($b) - strlen($a);
-        });
+            usort($routes, function($a, $b) {
+                return strlen($b) - strlen($a);
+            });
 
-        return $routes;
+            self::$commonRouteTypesSorted = $routes;
+        }
+
+        return self::$commonRouteTypesSorted;
     }
 
     /**
@@ -302,19 +330,23 @@ class AddressValues
      */
     public function getRouteTypes(bool $merge = false): array
     {
-        $routes = self::$routeTypes;
+        if (!$merge) {
+            return self::$routeTypes;
+        }
 
-        if ($merge) {
-            $keys   = array_keys($routes);
-            $values = array_values($routes);
+        if (self::$routeTypesMerged === null) {
+            $keys   = array_keys(self::$routeTypes);
+            $values = array_values(self::$routeTypes);
             $routes = array_unique(array_merge($keys, $values));
 
             usort($routes, function($a, $b) {
                 return strlen($b) - strlen($a);
             });
+
+            self::$routeTypesMerged = $routes;
         }
 
-        return $routes;
+        return self::$routeTypesMerged;
     }
 
     /**
@@ -324,9 +356,13 @@ class AddressValues
      */
     public function getDirections(): array
     {
-        $directions = array_unique(array_merge(array_values(self::$directions), array_keys(self::$directions)));
-        usort($directions, function ($a, $b) {return strlen($b) - strlen($a);});
-        return $directions;
+        if (self::$directionsMerged === null) {
+            $directions = array_unique(array_merge(array_values(self::$directions), array_keys(self::$directions)));
+            usort($directions, function ($a, $b) {return strlen($b) - strlen($a);});
+            self::$directionsMerged = $directions;
+        }
+
+        return self::$directionsMerged;
     }
 
     /**
@@ -369,9 +405,13 @@ class AddressValues
      */
     public function getUnitTypes(): array
     {
-        $unitTypes = array_merge(array_values(self::$unitTypes), array_keys(self::$unitTypes));
-        usort($unitTypes, function ($a, $b) {return strlen($b) - strlen($a);});
-        return array_unique($unitTypes);
+        if (self::$unitTypesMerged === null) {
+            $unitTypes = array_merge(array_values(self::$unitTypes), array_keys(self::$unitTypes));
+            usort($unitTypes, function ($a, $b) {return strlen($b) - strlen($a);});
+            self::$unitTypesMerged = array_unique($unitTypes);
+        }
+
+        return self::$unitTypesMerged;
     }
 
 }

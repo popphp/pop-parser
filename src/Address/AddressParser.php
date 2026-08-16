@@ -126,16 +126,24 @@ class AddressParser extends AbstractParser
      */
     public function getStreetName(bool $withRouteDirection = true): ?string
     {
-        $streetName = $this->streetName;
-        if (!empty($this->direction) && ($withRouteDirection)) {
-            if ($this->directionPosition == 1) {
-                $streetName = $streetName . ' ' . $this->direction;
-            } else {
-                $streetName = $this->direction . ' ' . $streetName;
-            }
+        return $withRouteDirection ? $this->applyDirection($this->streetName) : $this->streetName;
+    }
+
+    /**
+     * Prepend/append the direction to a street name, per its recorded position
+     *
+     * @param  ?string $streetName
+     * @return ?string
+     */
+    private function applyDirection(?string $streetName): ?string
+    {
+        if (empty($this->direction)) {
+            return $streetName;
         }
 
-        return $streetName;
+        return ($this->directionPosition == 1)
+            ? $streetName . ' ' . $this->direction
+            : $this->direction . ' ' . $streetName;
     }
 
     /**
@@ -366,15 +374,7 @@ class AddressParser extends AbstractParser
         }
 
         if (!empty($this->streetName)) {
-            $streetName = $this->streetName;
-
-            if (!empty($this->direction)) {
-                if ($this->directionPosition == 1) {
-                    $streetName = $streetName . ' ' . $this->direction;
-                } else {
-                    $streetName = $this->direction . ' ' . $streetName;
-                }
-            }
+            $streetName = $this->applyDirection($this->streetName);
 
             if (!empty($this->routeType)) {
                 $streetName .= ' ' . $this->routeType;
@@ -739,6 +739,7 @@ class AddressParser extends AbstractParser
                         array_map('strtolower', $addressValues->getRouteTypes(true)),
                         $addressValues->getCommonRouteTypes()
                     );
+                    $routeTypeSet = array_flip($routeTypes);
 
                     // Prefer the RIGHTMOST route-type match that still leaves at least
                     // one token after it (for a city). Neither "first" nor "last" alone
@@ -749,7 +750,7 @@ class AddressParser extends AbstractParser
                     // with nothing after it is far more likely to be the tail of the city
                     // name than the street's actual route suffix, since a route suffix is
                     // normally followed by a city.
-                    $findRouteBoundary = function(array $span) use ($routeTypes, $looksLikePoBoxLine): ?int {
+                    $findRouteBoundary = function(array $span) use ($routeTypeSet, $looksLikePoBoxLine): ?int {
                         // A span with no digit/PO-Box evidence at its head can only plausibly be
                         // a place name (e.g. "Lake Forest"), not a street/city hybrid - don't let
                         // a route-type word that's also a legitimate city-name word ("Lake",
@@ -762,7 +763,7 @@ class AddressParser extends AbstractParser
                         $lastSpanIndex   = count($span) - 1;
                         foreach ($span as $idx => $word) {
                             $routeCandidate = strtolower(rtrim($word, '.'));
-                            if (in_array($routeCandidate, $routeTypes, true) && ($idx < $lastSpanIndex)) {
+                            if (isset($routeTypeSet[$routeCandidate]) && ($idx < $lastSpanIndex)) {
                                 $routeEndIndex = $idx;
                             }
                         }
@@ -900,10 +901,12 @@ class AddressParser extends AbstractParser
         }
 
         $unitTypes = array_map('strtoupper', $addressValues->getUnitTypes());
+        $unitTypeSet = array_flip($unitTypes);
         $routeTypes = array_merge(
             array_map('strtolower', $addressValues->getRouteTypes(true)),
             $addressValues->getCommonRouteTypes()
         );
+        $routeTypeSet = array_flip($routeTypes);
         $poBoxRegex = '/^(P\.?O\.?\s*Box|POB|Box)$/i';
 
         // Pick the primary (street) line: the first remaining line with STRONG evidence of
@@ -922,7 +925,7 @@ class AddressParser extends AbstractParser
             $looksLikePoBox = (preg_match($poBoxRegex, str_replace(' ', '', $line[0])) === 1)
                 || ((count($line) >= 2) && (strcasecmp(str_replace('.', '', $line[0]), 'PO') === 0) && (strcasecmp($line[1], 'Box') === 0));
             $looksLikeStreet = $looksLikePoBox
-                || ((preg_match('/^\d/', $line[0]) === 1) && (in_array(strtolower(rtrim($line[$lastLineIndex], '.')), $routeTypes, true)));
+                || ((preg_match('/^\d/', $line[0]) === 1) && isset($routeTypeSet[strtolower(rtrim($line[$lastLineIndex], '.'))]));
             if ($looksLikeStreet) {
                 $primaryIndex = $idx;
                 break;
@@ -944,7 +947,7 @@ class AddressParser extends AbstractParser
             $hasDesignator = false;
             $hasDigit      = false;
             foreach ($line as $word) {
-                if (in_array(strtoupper(rtrim($word, '.')), $unitTypes, true)) {
+                if (isset($unitTypeSet[strtoupper(rtrim($word, '.'))])) {
                     $hasDesignator = true;
                 }
                 if (preg_match('/\d/', $word) === 1) {
@@ -999,7 +1002,7 @@ class AddressParser extends AbstractParser
                 array_splice($tokens, $lastIndex, 1);
             } else if ($lastIndex >= 1) {
                 $designatorCandidate = strtoupper(rtrim($tokens[$lastIndex - 1], '.'));
-                if (in_array($designatorCandidate, $unitTypes, true) && (preg_match('/\d/', $tokens[$lastIndex]) === 1)) {
+                if (isset($unitTypeSet[$designatorCandidate]) && (preg_match('/\d/', $tokens[$lastIndex]) === 1)) {
                     $unit = $tokens[$lastIndex - 1] . ' ' . $tokens[$lastIndex];
                     array_splice($tokens, $lastIndex - 1, 2);
                 }
@@ -1037,7 +1040,7 @@ class AddressParser extends AbstractParser
         if (!empty($tokens)) {
             $lastIndex = count($tokens) - 1;
             $candidate = strtolower(rtrim($tokens[$lastIndex], '.'));
-            if (in_array($candidate, $routeTypes, true)) {
+            if (isset($routeTypeSet[$candidate])) {
                 $routeType = $tokens[$lastIndex];
                 array_splice($tokens, $lastIndex, 1);
             }
