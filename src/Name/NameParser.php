@@ -584,9 +584,14 @@ class NameParser extends AbstractParser
      */
     protected function extractSalutation(array $tokens, NameValues $nameValues): array
     {
-        $salutations = $nameValues->getSalutations();
-        $claimed     = [];
-        $index       = 0;
+        $salutations = [];
+        foreach ($nameValues->getSalutations() as $key => $display) {
+            $keyWords      = explode(' ', $key);
+            $salutations[] = ['keyWords' => $keyWords, 'length' => count($keyWords), 'display' => $display];
+        }
+
+        $claimed = [];
+        $index   = 0;
 
         while (true) {
             $max = !empty($tokens) ? max(1, (int) floor(count($tokens) / 2)) : 0;
@@ -597,9 +602,7 @@ class NameParser extends AbstractParser
             $matchedLength = null;
             $matchedValue  = null;
 
-            foreach ($salutations as $key => $display) {
-                $keyWords = explode(' ', $key);
-                $length   = count($keyWords);
+            foreach ($salutations as ['keyWords' => $keyWords, 'length' => $length, 'display' => $display]) {
                 if (($index + $length) > count($tokens)) {
                     continue;
                 }
