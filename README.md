@@ -261,3 +261,4 @@ Calling `parse()` with no data set (neither passed to the constructor, `setData(
 itself), or with data that normalizes to an empty string, throws a `Pop\Parser\Exception`.
 
 [Top](#pop-parser)
+
