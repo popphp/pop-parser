@@ -91,6 +91,19 @@ class AddressParserTest extends TestCase
         $this->assertTrue($parser->hasUnit());
     }
 
+    public function testParseMultiLineAddressWithUnitOnOwnLine(): void
+    {
+        $parser = new AddressParser();
+        $parser->parse("123 Main St\nApt 4B\nSpringfield, IL 62704");
+
+        $this->assertEquals('123', $parser->getStreetNumber());
+        $this->assertEquals('Main', $parser->getStreetName(false));
+        $this->assertEquals('Apt 4B', $parser->getUnit());
+        $this->assertEquals('Springfield', $parser->getCity());
+        $this->assertEquals('IL', $parser->getStateCode());
+        $this->assertEquals('62704', $parser->getPostalCode());
+    }
+
     public function testGetStreetNamePrefixesDirectionWhenItPrecedesStreetName(): void
     {
         $parser = new AddressParser();
@@ -449,6 +462,19 @@ class AddressParserTest extends TestCase
 
         $this->assertEquals([
             '123 Main St',
+            'Springfield',
+            'IL 62704',
+        ], array_values($result));
+    }
+
+    public function testCleanSplitsOnNewlinesAndTabs(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->clean("123 Main St\nApt 4B\tSpringfield, IL 62704");
+
+        $this->assertEquals([
+            '123 Main St',
+            'Apt 4B',
             'Springfield',
             'IL 62704',
         ], array_values($result));

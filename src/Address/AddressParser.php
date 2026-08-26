@@ -532,14 +532,18 @@ class AddressParser extends AbstractParser
      */
     public function clean(string $address): array
     {
-        // Multiple spaces
-        $address = preg_replace('/\s+/', ' ', $address);
-
-        // Bad dash format
-        $address = str_replace([' -', '- '], '-', $address);
-
         // Split into array by comma, semi-colon, newline, and/or tab delimiters
-        return array_filter(array_map('trim', preg_split('/,|\t|\n|\r|;/', $address)));
+        $lines = preg_split('/,|\t|\n|\r|;/', $address);
+
+        return array_filter(array_map(function ($line) {
+            // Multiple spaces
+            $line = preg_replace('/\s+/', ' ', $line);
+
+            // Bad dash format
+            $line = str_replace([' -', '- '], '-', $line);
+
+            return trim($line);
+        }, $lines));
     }
 
     /**

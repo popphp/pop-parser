@@ -287,7 +287,7 @@ class NameParser extends AbstractParser
 
         if ((null === $name) && !empty($this->data)) {
             $name = $this->data;
-        } else if ((null !== $name) && empty($this->data)) {
+        } else if (null !== $name) {
             $this->data = $name;
         }
 

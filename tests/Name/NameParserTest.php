@@ -39,6 +39,15 @@ class NameParserTest extends TestCase
         $this->assertEquals('James', $parser->getFirstname());
     }
 
+    public function testParseArgumentUpdatesDataWhenConstructorDataWasAlreadySet(): void
+    {
+        $parser = new NameParser('James Norrington');
+        $parser->parse('Elizabeth Swann');
+
+        $this->assertEquals('Elizabeth Swann', $parser->getData());
+        $this->assertEquals('Elizabeth', $parser->getFirstname());
+    }
+
     public function testParseSimpleFirstLast(): void
     {
         $parser = new NameParser();
