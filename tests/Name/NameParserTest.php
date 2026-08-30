@@ -67,6 +67,7 @@ class NameParserTest extends TestCase
         $this->assertEquals('Hans', $result->getFirstname());
         $this->assertEquals('Christian', $result->getMiddlename());
         $this->assertEquals('Anderssen', $result->getLastname());
+        $this->assertTrue($result->hasMiddlename());
     }
 
     public function testParseSingleWordIsFirstnameOnly(): void
@@ -89,6 +90,9 @@ class NameParserTest extends TestCase
         $this->assertEquals('von', $result->getLastnamePrefix());
         $this->assertEquals('Fange', $result->getLastname());
         $this->assertEquals('III', $result->getSuffix());
+        $this->assertTrue($result->hasSalutation());
+        $this->assertTrue($result->hasInitials());
+        $this->assertTrue($result->hasSuffix());
     }
 
     public function testParseConsecutiveSalutationsAreBothClaimed(): void
@@ -261,6 +265,23 @@ class NameParserTest extends TestCase
         $this->assertEquals('Bubba', $result->getNickname());
         $this->assertEquals('Smith', $result->getLastname());
         $this->assertEquals('(Bubba)', $result->getNickname(true));
+        $this->assertTrue($result->hasNickname());
+    }
+
+    /**
+     * Regression test: an opening nickname delimiter with no matching closer anywhere in
+     * the remaining tokens must not be treated as a nickname at all - the delimiter and
+     * everything after it just fall through to the ordinary extraction pipeline.
+     */
+    public function testParseUnterminatedNicknameDelimiterIsNotTreatedAsANickname(): void
+    {
+        $parser = new NameParser();
+        $result = $parser->parse('Jimmy (Bubba Smith');
+
+        $this->assertNull($result->getNickname());
+        $this->assertFalse($result->hasNickname());
+        $this->assertEquals('Jimmy', $result->getFirstname());
+        $this->assertEquals('Smith', $result->getLastname());
     }
 
     public function testParseMultiWordNicknameInQuotes(): void

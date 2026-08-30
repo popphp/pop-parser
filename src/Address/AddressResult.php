@@ -130,7 +130,7 @@ class AddressResult extends AbstractResult
         $this->direction         = $address['direction'] ?? null;
         $this->directionPosition = $address['directionPosition'] ?? null;
         $this->unit              = $address['unit'] ?? null;
-        $this->isPoBox           = $address['isPoBox'] ?? null;
+        $this->isPoBox           = $address['isPoBox'] ?? false;
         $this->city              = $address['city'] ?? null;
         $this->postalCode        = $address['postalCode'] ?? null;
         $this->zip4              = $address['zip4'] ?? null;

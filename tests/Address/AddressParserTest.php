@@ -76,6 +76,114 @@ class AddressParserTest extends TestCase
         $this->assertEquals('US', $result->getCountry());
         $this->assertNull($result->getZip4());
         $this->assertNull($result->getDirection());
+        $this->assertTrue($result->hasStreetNumber());
+        $this->assertTrue($result->hasStreetName());
+        $this->assertTrue($result->hasRouteType());
+        $this->assertTrue($result->hasPostalCode());
+        $this->assertTrue($result->hasStateName());
+        $this->assertTrue($result->hasStateCode());
+        $this->assertTrue($result->hasCountry());
+    }
+
+    /**
+     * Regression test: a Canadian postal code written with an internal space (rather than
+     * jammed into one token) must still be recognized by joining the two adjacent tokens.
+     */
+    public function testParseCanadianPostalCodeWithInternalSpace(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('789 Elm St, Toronto, ON M4B 1B3');
+
+        $this->assertEquals('M4B1B3', $result->getPostalCode());
+        $this->assertEquals('CA', $result->getCountry());
+    }
+
+    /**
+     * Regression test: a 9-digit US postal code with no dash separator must still split
+     * into postalCode/zip4, the same as the dashed form.
+     */
+    public function testParseSplitsZipPlus4FromUndashedNineDigitPostalCode(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('100 Main St, Anytown, IL 907001234');
+
+        $this->assertEquals('90700', $result->getPostalCode());
+        $this->assertEquals('1234', $result->getZip4());
+    }
+
+    /**
+     * Regression test: a postal code on its own comma segment (the first, and only, token
+     * on its line) must still resolve the state from the nearest preceding line.
+     */
+    public function testParseWithPostalCodeAsItsOwnCommaSegment(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('123 Main St, Springfield, IL, 62704');
+
+        $this->assertEquals('IL', $result->getStateCode());
+        $this->assertEquals('62704', $result->getPostalCode());
+        $this->assertEquals('Springfield', $result->getCity());
+    }
+
+    /**
+     * Regression test: a spelled-out state/province name (not just the 2-letter code) must
+     * still resolve, for both US states and Canadian provinces.
+     */
+    public function testParseRecognizesSpelledOutStateNames(): void
+    {
+        $us       = new AddressParser();
+        $usResult = $us->parse('123 Main St, Springfield, Illinois 62704');
+        $this->assertEquals('IL', $usResult->getStateCode());
+        $this->assertEquals('Illinois', $usResult->getStateName());
+
+        $ca       = new AddressParser();
+        $caResult = $ca->parse('123 Queen St, Toronto, Ontario M4B1B3');
+        $this->assertEquals('ON', $caResult->getStateCode());
+        $this->assertEquals('Ontario', $caResult->getStateName());
+    }
+
+    /**
+     * Regression test: a street+city hybrid with no comma between them, but a comma before
+     * the state, must still split via the route-boundary heuristic even though it's reached
+     * through the "state's own line has nothing before it" fallback path, not the direct
+     * same-line path.
+     */
+    public function testParseCompactStreetCityHybridBeforeCommaSeparatedState(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('123 Main St Springfield, IL 62704');
+
+        $this->assertEquals('123', $result->getStreetNumber());
+        $this->assertEquals('Main', $result->getStreetName(false));
+        $this->assertEquals('St', $result->getRouteType());
+        $this->assertEquals('Springfield', $result->getCity());
+    }
+
+    /**
+     * Regression test: an explicit trailing country segment ("USA") must be recognized, not
+     * just the country implied by the postal code format.
+     */
+    public function testParseRecognizesExplicitUsaCountrySegment(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('123 Main St, Springfield, IL 62704, USA');
+
+        $this->assertEquals('US', $result->getCountry());
+    }
+
+    /**
+     * Regression test: a comma-less address with no digit-leading, route-type-word evidence
+     * at all can't be split into street/city - city is left null (an unguessed split, not a
+     * missing value) and the whole leading span is handed to street parsing as-is.
+     */
+    public function testParseCommaLessAddressWithNoRouteTypeEvidenceLeavesCityUnguessed(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('Beverlywood CA 90210');
+
+        $this->assertNull($result->getCity());
+        $this->assertEquals('Beverlywood', $result->getStreetName(false));
+        $this->assertEquals('CA', $result->getStateCode());
     }
 
     public function testParsePicksUpDirectionAndUnit(): void
@@ -220,6 +328,37 @@ class AddressParserTest extends TestCase
         $result = $parser->parse('123 Main St, Springfield, IL 62704');
 
         $this->assertFalse($result->isPoBox());
+    }
+
+    /**
+     * Regression test: a bare "Box"/"POB" token (no "PO" prefix as a separate token) is
+     * still recognized as a PO Box - the single-token form of the PO Box match, distinct
+     * from the "PO" + "Box" two-separate-tokens form the other PO Box tests exercise.
+     */
+    public function testParsePoBoxRecognizesBareBoxAndPobTokens(): void
+    {
+        $box       = new AddressParser();
+        $boxResult = $box->parse('Box 1234, Austin, TX 73301');
+        $this->assertTrue($boxResult->isPoBox());
+        $this->assertEquals('PO Box 1234', $boxResult->getStreetName(false));
+
+        $pob       = new AddressParser();
+        $pobResult = $pob->parse('POB 1234, Austin, TX 73301');
+        $this->assertTrue($pobResult->isPoBox());
+        $this->assertEquals('PO Box 1234', $pobResult->getStreetName(false));
+    }
+
+    /**
+     * Regression test: a bare "#..." unit token trailing the primary (comma-less) street
+     * line itself - not a separate secondary "Apt 3B"-style line - is still recognized.
+     */
+    public function testParsePrimaryLineTrailingHashUnit(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('123 Main St #4B, Springfield, IL 62704');
+
+        $this->assertEquals('#4B', $result->getUnit());
+        $this->assertEquals('Main', $result->getStreetName(false));
     }
 
     /**
@@ -531,6 +670,34 @@ class AddressParserTest extends TestCase
         $result = $parser->parse('123 Main St, Springfield, IL 62704');
 
         $this->assertEquals($result->getFullAddress(), (string) $result);
+    }
+
+    /**
+     * Regression test: with no street number (a PO Box), getFullAddress() uses the street
+     * name alone as the first line rather than requiring a number to build on.
+     */
+    public function testGetFullAddressWithoutStreetNumberUsesStreetNameAlone(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('PO Box 1234, Austin, TX 73301');
+
+        $this->assertEquals('PO Box 1234, Austin, TX 73301', $result->getFullAddress());
+    }
+
+    public function testGetFullAddressIncludesUnit(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('456 N Oak Avenue Apt 3B, Chicago, IL 60614');
+
+        $this->assertEquals('456 N Oak Avenue, Apt 3B, Chicago, IL 60614', $result->getFullAddress());
+    }
+
+    public function testGetFullAddressIncludesZip4(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('100 Main St, Anytown, IL 90210-1234');
+
+        $this->assertEquals('100 Main St, Anytown, IL 90210-1234', $result->getFullAddress());
     }
 
     public function testParseStreetAddressOnlyParsesLocationPortion(): void
