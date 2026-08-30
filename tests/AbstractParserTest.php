@@ -42,13 +42,13 @@ class AbstractParserTest extends TestCase
         $this->assertNull($parser->getResult());
     }
 
-    public function testParseSetsResultAndReturnsStatic(): void
+    public function testParseSetsResultAndReturnsIt(): void
     {
-        $parser  = new ConcreteParser('baz');
-        $result  = $parser->parse();
+        $parser = new ConcreteParser('baz');
+        $result = $parser->parse();
 
-        $this->assertSame($parser, $result);
-        $this->assertEquals('baz', $parser->getResult());
+        $this->assertSame($parser->getResult(), $result);
+        $this->assertEquals('baz', $result->getValue());
     }
 
     public function testHasErrorDefaultsToFalse(): void

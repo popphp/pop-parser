@@ -31,255 +31,18 @@ class NameParser extends AbstractParser
 {
 
     /**
-     * Salutation
-     * @var ?string
-     * */
-    protected ?string $salutation = null;
-
-    /**
-     * First name
-     * @var ?string
-     * */
-    protected ?string $firstname = null;
-
-    /**
-     * Middle name
-     * @var ?string
-     * */
-    protected ?string $middlename = null;
-
-    /**
-     * Nickname
-     * @var ?string
-     * */
-    protected ?string $nickname = null;
-
-    /**
-     * Initials
-     * @var ?string
-     * */
-    protected ?string $initials = null;
-
-    /**
-     * Lastname prefix
-     * @var ?string
-     * */
-    protected ?string $lastnamePrefix = null;
-
-    /**
-     * Last name
-     * @var ?string
-     * */
-    protected ?string $lastname = null;
-
-    /**
-     * Suffix
-     * @var ?string
-     * */
-    protected ?string $suffix = null;
-
-    /**
-     * Queue of raw tokens claimed as initials during extraction, before the first one is
-     * (potentially) promoted back to firstname by finalizeInitials()
-     * @var array
-     * */
-    protected array $initialsQueue = [];
-
-    /**
-     * Method to get salutation
-     *
-     * @return ?string
-     */
-    public function getSalutation(): ?string
-    {
-        return $this->salutation;
-    }
-
-    /**
-     * Method to get first name
-     *
-     * @return ?string
-     */
-    public function getFirstname(): ?string
-    {
-        return $this->firstname;
-    }
-
-    /**
-     * Method to get middle name
-     *
-     * @return ?string
-     */
-    public function getMiddlename(): ?string
-    {
-        return $this->middlename;
-    }
-
-    /**
-     * Method to get nickname
-     *
-     * @param  bool $wrap
-     * @return ?string
-     */
-    public function getNickname(bool $wrap = false): ?string
-    {
-        if (($this->nickname !== null) && $wrap) {
-            return '(' . $this->nickname . ')';
-        }
-
-        return $this->nickname;
-    }
-
-    /**
-     * Method to get initials
-     *
-     * @return ?string
-     */
-    public function getInitials(): ?string
-    {
-        return $this->initials;
-    }
-
-    /**
-     * Method to get lastname prefix
-     *
-     * @return ?string
-     */
-    public function getLastnamePrefix(): ?string
-    {
-        return $this->lastnamePrefix;
-    }
-
-    /**
-     * Method to get last name
-     *
-     * @return ?string
-     */
-    public function getLastname(): ?string
-    {
-        return $this->lastname;
-    }
-
-    /**
-     * Method to get suffix
-     *
-     * @return ?string
-     */
-    public function getSuffix(): ?string
-    {
-        return $this->suffix;
-    }
-
-    /**
-     * Method to get the given name (first name, initials and middle name, in that order)
-     *
-     * @return ?string
-     */
-    public function getGivenName(): ?string
-    {
-        $parts = array_filter([$this->firstname, $this->initials, $this->middlename]);
-        return !empty($parts) ? implode(' ', $parts) : null;
-    }
-
-    /**
-     * Method to get the full name (given name plus lastname prefix and lastname)
-     *
-     * @return ?string
-     */
-    public function getFullName(): ?string
-    {
-        $parts = array_filter([$this->getGivenName(), $this->lastnamePrefix, $this->lastname]);
-        return !empty($parts) ? implode(' ', $parts) : null;
-    }
-
-    /**
-     * Has salutation
-     *
-     * @return bool
-     */
-    public function hasSalutation(): bool
-    {
-        return !empty($this->salutation);
-    }
-
-    /**
-     * Has first name
-     *
-     * @return bool
-     */
-    public function hasFirstname(): bool
-    {
-        return !empty($this->firstname);
-    }
-
-    /**
-     * Has middle name
-     *
-     * @return bool
-     */
-    public function hasMiddlename(): bool
-    {
-        return !empty($this->middlename);
-    }
-
-    /**
-     * Has nickname
-     *
-     * @return bool
-     */
-    public function hasNickname(): bool
-    {
-        return !empty($this->nickname);
-    }
-
-    /**
-     * Has initials
-     *
-     * @return bool
-     */
-    public function hasInitials(): bool
-    {
-        return !empty($this->initials);
-    }
-
-    /**
-     * Has lastname prefix
-     *
-     * @return bool
-     */
-    public function hasLastnamePrefix(): bool
-    {
-        return !empty($this->lastnamePrefix);
-    }
-
-    /**
-     * Has last name
-     *
-     * @return bool
-     */
-    public function hasLastname(): bool
-    {
-        return !empty($this->lastname);
-    }
-
-    /**
-     * Has suffix
-     *
-     * @return bool
-     */
-    public function hasSuffix(): bool
-    {
-        return !empty($this->suffix);
-    }
-
-    /**
      * Parse method
+     *
+     * Builds up the parsed fields in a local $fields array (and a local $initialsQueue),
+     * threaded by reference through each extraction step, rather than on $this - the
+     * parser holds no parsed-field state of its own. The very last step wraps that array
+     * into an immutable NameResult, which is what's actually returned.
      *
      * @param  ?string $name
      * @throws Exception
-     * @return static
+     * @return NameResult
      */
-    public function parse(?string $name = null): static
+    public function parse(?string $name = null): NameResult
     {
         if (empty($this->data) && empty($name)) {
             throw new Exception('Error: You must pass a name string to the parser object.');
@@ -297,59 +60,40 @@ class NameParser extends AbstractParser
             throw new Exception('Error: You must pass a name string to the parser object.');
         }
 
-        // Several fields below are built by concatenation as extraction proceeds (e.g.
-        // consecutive salutations, multiple trailing suffixes). Reset them here so a second
-        // parse() call on the same instance starts clean rather than appending onto results
-        // from a previous call.
-        $this->salutation     = null;
-        $this->firstname      = null;
-        $this->middlename     = null;
-        $this->nickname       = null;
-        $this->initials       = null;
-        $this->lastnamePrefix = null;
-        $this->lastname       = null;
-        $this->suffix         = null;
-        $this->initialsQueue  = [];
+        $fields = [
+            'salutation'     => null,
+            'firstname'      => null,
+            'middlename'     => null,
+            'nickname'       => null,
+            'initials'       => null,
+            'lastnamePrefix' => null,
+            'lastname'       => null,
+            'suffix'         => null,
+        ];
+        $initialsQueue = [];
 
         $nameValues = new NameValues();
 
         if (str_contains($name, ',')) {
-            $this->parseCommaMode($name, $nameValues);
+            $this->parseCommaMode($name, $nameValues, $fields, $initialsQueue);
         } else {
             $tokens        = $this->tokenize($name);
             $originalCount = count($tokens);
-            $tokens        = $this->extractNickname($tokens, $nameValues);
-            $tokens        = $this->extractSalutation($tokens, $nameValues);
-            $tokens        = $this->extractSuffix($tokens, $nameValues, 2);
-            $tokens        = $this->extractInitials($tokens, false, $nameValues);
-            $tokens        = $this->extractLastname($tokens, $nameValues, false, $originalCount);
-            $tokens        = $this->extractFirstname($tokens);
-            $tokens        = $this->extractMiddlename($tokens);
-            $this->absorbLeftovers($tokens);
+            $tokens        = $this->extractNickname($tokens, $nameValues, $fields);
+            $tokens        = $this->extractSalutation($tokens, $nameValues, $fields);
+            $tokens        = $this->extractSuffix($tokens, $nameValues, $fields, 2);
+            $tokens        = $this->extractInitials($tokens, false, $nameValues, $initialsQueue);
+            $tokens        = $this->extractLastname($tokens, $nameValues, $fields, false, $originalCount);
+            $tokens        = $this->extractFirstname($tokens, $fields);
+            $tokens        = $this->extractMiddlename($tokens, $fields);
+            $this->absorbLeftovers($tokens, $fields);
         }
 
-        $this->finalizeInitials();
+        $this->finalizeInitials($fields, $initialsQueue);
 
-        return $this;
-    }
+        $this->result = new NameResult($fields);
 
-    /**
-     * To array method
-     *
-     * @return array
-     */
-    public function toArray(): array
-    {
-        return [
-            'salutation'     => $this->salutation,
-            'firstname'      => $this->firstname,
-            'initials'       => $this->initials,
-            'middlename'     => $this->middlename,
-            'nickname'       => $this->nickname,
-            'lastnamePrefix' => $this->lastnamePrefix,
-            'lastname'       => $this->lastname,
-            'suffix'         => $this->suffix,
-        ];
+        return $this->result;
     }
 
     /**
@@ -410,11 +154,13 @@ class NameParser extends AbstractParser
     /**
      * Parse comma-separated "Last, First Middle[, Suffix]" format
      *
-     * @param  string      $name
-     * @param  NameValues  $nameValues
+     * @param  string     $name
+     * @param  NameValues $nameValues
+     * @param  array      $fields
+     * @param  array      $initialsQueue
      * @return void
      */
-    protected function parseCommaMode(string $name, NameValues $nameValues): void
+    protected function parseCommaMode(string $name, NameValues $nameValues, array &$fields, array &$initialsQueue): void
     {
         $segments = array_map('trim', explode(',', $name));
 
@@ -427,20 +173,20 @@ class NameParser extends AbstractParser
         // it into middlename once firstname is already set instead.
         $segment1       = $this->tokenize($segments[0]);
         $originalCount1 = count($segment1);
-        $segment1       = $this->extractSalutation($segment1, $nameValues);
-        $segment1       = $this->extractSuffix($segment1, $nameValues, 0, true);
-        $segment1       = $this->extractLastname($segment1, $nameValues, true, $originalCount1);
+        $segment1       = $this->extractSalutation($segment1, $nameValues, $fields);
+        $segment1       = $this->extractSuffix($segment1, $nameValues, $fields, 0, true);
+        $segment1       = $this->extractLastname($segment1, $nameValues, $fields, true, $originalCount1);
 
         // Segment 2 (between commas, or everything after the first comma): the given-name segment
         if (isset($segments[1]) && ($segments[1] !== '')) {
             $segment2 = $this->tokenize($segments[1]);
-            $segment2 = $this->extractSalutation($segment2, $nameValues);
-            $segment2 = $this->extractSuffix($segment2, $nameValues, 0, true, true);
-            $segment2 = $this->extractNickname($segment2, $nameValues);
-            $segment2 = $this->extractInitials($segment2, true, $nameValues);
-            $segment2 = $this->extractFirstname($segment2);
-            $segment2 = $this->extractMiddlename($segment2);
-            $this->absorbLeftovers($segment2);
+            $segment2 = $this->extractSalutation($segment2, $nameValues, $fields);
+            $segment2 = $this->extractSuffix($segment2, $nameValues, $fields, 0, true, true);
+            $segment2 = $this->extractNickname($segment2, $nameValues, $fields);
+            $segment2 = $this->extractInitials($segment2, true, $nameValues, $initialsQueue);
+            $segment2 = $this->extractFirstname($segment2, $fields);
+            $segment2 = $this->extractMiddlename($segment2, $fields);
+            $this->absorbLeftovers($segment2, $fields);
         }
 
         // Now that segment 2 has had its chance to claim the firstname slot: if it didn't
@@ -448,11 +194,11 @@ class NameParser extends AbstractParser
         // normal way (first word -> firstname, the rest -> middlename) rather than joining it
         // into one string. If segment 2 already provided a firstname, segment 1's leftover is
         // secondary content - absorbLeftovers() merges the whole thing into middlename.
-        if ($this->firstname === null) {
-            $segment1 = $this->extractFirstname($segment1);
-            $segment1 = $this->extractMiddlename($segment1);
+        if ($fields['firstname'] === null) {
+            $segment1 = $this->extractFirstname($segment1, $fields);
+            $segment1 = $this->extractMiddlename($segment1, $fields);
         }
-        $this->absorbLeftovers($segment1);
+        $this->absorbLeftovers($segment1, $fields);
 
         // Segment 3 onward (after a second comma, if present): suffix only per segment, with
         // any non-suffix leftover absorbed rather than discarded (e.g. "Smith, John, Michael"
@@ -465,8 +211,8 @@ class NameParser extends AbstractParser
                 continue;
             }
             $extraSegment = $this->tokenize($segment);
-            $extraSegment = $this->extractSuffix($extraSegment, $nameValues, 0, true);
-            $this->absorbLeftovers($extraSegment);
+            $extraSegment = $this->extractSuffix($extraSegment, $nameValues, $fields, 0, true);
+            $this->absorbLeftovers($extraSegment, $fields);
         }
     }
 
@@ -478,9 +224,10 @@ class NameParser extends AbstractParser
      * in "The Rev. Mark Williams") - here nothing is ever discarded.
      *
      * @param  array $tokens
+     * @param  array $fields
      * @return void
      */
-    protected function absorbLeftovers(array $tokens): void
+    protected function absorbLeftovers(array $tokens, array &$fields): void
     {
         if (empty($tokens)) {
             return;
@@ -488,10 +235,10 @@ class NameParser extends AbstractParser
 
         $text = $this->normalizeWords($tokens);
 
-        if ($this->firstname === null) {
-            $this->firstname = $text;
+        if ($fields['firstname'] === null) {
+            $fields['firstname'] = $text;
         } else {
-            $this->middlename = trim(($this->middlename ?? '') . ' ' . $text);
+            $fields['middlename'] = trim(($fields['middlename'] ?? '') . ' ' . $text);
         }
     }
 
@@ -501,24 +248,26 @@ class NameParser extends AbstractParser
      * initials="B.", lastname="Hunt"), since a name consisting only of initials plus a
      * lastname still needs a firstname.
      *
+     * @param  array $fields
+     * @param  array $initialsQueue
      * @return void
      */
-    protected function finalizeInitials(): void
+    protected function finalizeInitials(array &$fields, array &$initialsQueue): void
     {
-        if (empty($this->initialsQueue)) {
+        if (empty($initialsQueue)) {
             return;
         }
 
-        if ($this->firstname === null) {
-            $promoted        = array_shift($this->initialsQueue);
-            $this->firstname = $this->normalizeCase($promoted);
+        if ($fields['firstname'] === null) {
+            $promoted            = array_shift($initialsQueue);
+            $fields['firstname'] = $this->normalizeCase($promoted);
         }
 
-        if (!empty($this->initialsQueue)) {
-            $this->initials = trim(($this->initials ?? '') . ' ' . $this->normalizeWords($this->initialsQueue));
+        if (!empty($initialsQueue)) {
+            $fields['initials'] = trim(($fields['initials'] ?? '') . ' ' . $this->normalizeWords($initialsQueue));
         }
 
-        $this->initialsQueue = [];
+        $initialsQueue = [];
     }
 
     /**
@@ -529,9 +278,10 @@ class NameParser extends AbstractParser
      *
      * @param  array      $tokens
      * @param  NameValues $nameValues
+     * @param  array      $fields
      * @return array
      */
-    protected function extractNickname(array $tokens, NameValues $nameValues): array
+    protected function extractNickname(array $tokens, NameValues $nameValues, array &$fields): array
     {
         $delimiters = $nameValues->getNicknameDelimiters();
         $openChars  = array_keys($delimiters);
@@ -563,7 +313,7 @@ class NameParser extends AbstractParser
             $span             = array_map(fn($word) => trim($word, '\'"'), $span);
             $span             = array_filter($span, fn($word) => $word !== '');
 
-            $this->nickname = $this->normalizeWords($span);
+            $fields['nickname'] = $this->normalizeWords($span);
             array_splice($tokens, $start, $end - $start + 1);
             break;
         }
@@ -580,9 +330,10 @@ class NameParser extends AbstractParser
      *
      * @param  array      $tokens
      * @param  NameValues $nameValues
+     * @param  array      $fields
      * @return array
      */
-    protected function extractSalutation(array $tokens, NameValues $nameValues): array
+    protected function extractSalutation(array $tokens, NameValues $nameValues, array &$fields): array
     {
         $salutations = [];
         foreach ($nameValues->getSalutations() as $key => $display) {
@@ -625,7 +376,7 @@ class NameParser extends AbstractParser
         }
 
         if (!empty($claimed)) {
-            $this->salutation = trim(($this->salutation ?? '') . ' ' . implode(' ', $claimed));
+            $fields['salutation'] = trim(($fields['salutation'] ?? '') . ' ' . implode(' ', $claimed));
         }
 
         return array_values($tokens);
@@ -640,6 +391,7 @@ class NameParser extends AbstractParser
      *
      * @param  array      $tokens
      * @param  NameValues $nameValues
+     * @param  array      $fields
      * @param  int        $reservedParts
      * @param  bool       $matchSinglePart
      * @param  bool       $reserveLastToken
@@ -648,6 +400,7 @@ class NameParser extends AbstractParser
     protected function extractSuffix(
         array $tokens,
         NameValues $nameValues,
+        array &$fields,
         int $reservedParts = 2,
         bool $matchSinglePart = false,
         bool $reserveLastToken = false
@@ -658,7 +411,7 @@ class NameParser extends AbstractParser
         if ($matchSinglePart && (count($tokens) === 1)) {
             $key = strtolower(str_replace('.', '', $tokens[0]));
             if (isset($suffixes[$key])) {
-                $this->suffix = trim(($this->suffix ?? '') . ' ' . $suffixes[$key]);
+                $fields['suffix'] = trim(($fields['suffix'] ?? '') . ' ' . $suffixes[$key]);
                 return [];
             }
             return $tokens;
@@ -680,7 +433,7 @@ class NameParser extends AbstractParser
         if (!empty($claimed)) {
             $count = count($claimed);
             array_splice($tokens, count($tokens) - $count, $count);
-            $this->suffix = trim(($this->suffix ?? '') . ' ' . implode(' ', $claimed));
+            $fields['suffix'] = trim(($fields['suffix'] ?? '') . ' ' . implode(' ', $claimed));
         }
 
         return array_values($tokens);
@@ -700,9 +453,10 @@ class NameParser extends AbstractParser
      * @param  array      $tokens
      * @param  bool       $matchLastPart
      * @param  NameValues $nameValues
+     * @param  array      $initialsQueue
      * @return array
      */
-    protected function extractInitials(array $tokens, bool $matchLastPart, NameValues $nameValues): array
+    protected function extractInitials(array $tokens, bool $matchLastPart, NameValues $nameValues, array &$initialsQueue): array
     {
         $prefixes = $nameValues->getLastnamePrefixes();
 
@@ -734,7 +488,7 @@ class NameParser extends AbstractParser
         }
 
         foreach ($claimedIndexes as $i) {
-            $this->initialsQueue[] = $tokens[$i];
+            $initialsQueue[] = $tokens[$i];
         }
         foreach (array_reverse($claimedIndexes) as $i) {
             array_splice($tokens, $i, 1);
@@ -760,6 +514,7 @@ class NameParser extends AbstractParser
      *
      * @param  array      $tokens
      * @param  NameValues $nameValues
+     * @param  array      $fields
      * @param  bool       $singlePartOk
      * @param  ?int       $originalCount
      * @return array
@@ -767,6 +522,7 @@ class NameParser extends AbstractParser
     protected function extractLastname(
         array $tokens,
         NameValues $nameValues,
+        array &$fields,
         bool $singlePartOk = false,
         ?int $originalCount = null
     ): array
@@ -819,9 +575,9 @@ class NameParser extends AbstractParser
             }
         }
 
-        $this->lastname = $this->normalizeWords($lastnameWords);
+        $fields['lastname'] = $this->normalizeWords($lastnameWords);
         if (!empty($prefixWords)) {
-            $this->lastnamePrefix = implode(' ', $prefixWords);
+            $fields['lastnamePrefix'] = implode(' ', $prefixWords);
         }
 
         return array_values($tokens);
@@ -834,15 +590,16 @@ class NameParser extends AbstractParser
      * remaining token becomes firstname.
      *
      * @param  array $tokens
+     * @param  array $fields
      * @return array
      */
-    protected function extractFirstname(array $tokens): array
+    protected function extractFirstname(array $tokens, array &$fields): array
     {
         if (empty($tokens)) {
             return $tokens;
         }
 
-        $this->firstname = $this->normalizeCase($tokens[0]);
+        $fields['firstname'] = $this->normalizeCase($tokens[0]);
         array_splice($tokens, 0, 1);
 
         return array_values($tokens);
@@ -854,36 +611,18 @@ class NameParser extends AbstractParser
      * Whatever raw tokens remain after firstname extraction join as middlename.
      *
      * @param  array $tokens
+     * @param  array $fields
      * @return array
      */
-    protected function extractMiddlename(array $tokens): array
+    protected function extractMiddlename(array $tokens, array &$fields): array
     {
         if (empty($tokens)) {
             return $tokens;
         }
 
-        $this->middlename = trim(($this->middlename ?? '') . ' ' . $this->normalizeWords($tokens));
+        $fields['middlename'] = trim(($fields['middlename'] ?? '') . ' ' . $this->normalizeWords($tokens));
 
         return [];
-    }
-
-    /**
-     * To string method
-     *
-     * @return string
-     */
-    public function __toString(): string
-    {
-        $parts = array_filter([
-            $this->salutation,
-            $this->getGivenName(),
-            $this->getNickname(true),
-            $this->lastnamePrefix,
-            $this->lastname,
-            $this->suffix,
-        ]);
-
-        return implode(' ', $parts);
     }
 
 }

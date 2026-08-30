@@ -33,9 +33,9 @@ class AddressParserTest extends TestCase
     public function testParseWithNoArgumentUsesConstructorData(): void
     {
         $parser = new AddressParser('123 Main St, Springfield, IL 62704');
-        $parser->parse();
+        $result = $parser->parse();
 
-        $this->assertEquals('123', $parser->getStreetNumber());
+        $this->assertEquals('123', $result->getStreetNumber());
     }
 
     public function testParseWithExplicitAddressWhenNoDataSetAlsoSetsData(): void
@@ -55,91 +55,91 @@ class AddressParserTest extends TestCase
     public function testParseArgumentTakesPrecedenceOverConstructorDataWithoutUpdatingData(): void
     {
         $parser = new AddressParser('111 First St, Springfield, IL 62704');
-        $parser->parse('222 Second St, Springfield, IL 62704');
+        $result = $parser->parse('222 Second St, Springfield, IL 62704');
 
         $this->assertEquals('111 First St, Springfield, IL 62704', $parser->getData());
-        $this->assertEquals('222', $parser->getStreetNumber());
+        $this->assertEquals('222', $result->getStreetNumber());
     }
 
     public function testParseFullUsAddress(): void
     {
         $parser = new AddressParser();
-        $parser->parse('123 Main St, Springfield, IL 62704');
+        $result = $parser->parse('123 Main St, Springfield, IL 62704');
 
-        $this->assertEquals('123', $parser->getStreetNumber());
-        $this->assertEquals('Main', $parser->getStreetName(false));
-        $this->assertEquals('Springfield', $parser->getCity());
-        $this->assertEquals('IL', $parser->getStateCode());
-        $this->assertEquals('Illinois', $parser->getStateName());
-        $this->assertEquals('62704', $parser->getPostalCode());
-        $this->assertEquals('US', $parser->getCountry());
-        $this->assertNull($parser->getZip4());
-        $this->assertNull($parser->getDirection());
+        $this->assertEquals('123', $result->getStreetNumber());
+        $this->assertEquals('Main', $result->getStreetName(false));
+        $this->assertEquals('Springfield', $result->getCity());
+        $this->assertEquals('IL', $result->getStateCode());
+        $this->assertEquals('Illinois', $result->getStateName());
+        $this->assertEquals('62704', $result->getPostalCode());
+        $this->assertEquals('US', $result->getCountry());
+        $this->assertNull($result->getZip4());
+        $this->assertNull($result->getDirection());
     }
 
     public function testParsePicksUpDirectionAndUnit(): void
     {
         $parser = new AddressParser();
-        $parser->parse('456 N Oak Avenue Apt 3B, Chicago, IL 60614');
+        $result = $parser->parse('456 N Oak Avenue Apt 3B, Chicago, IL 60614');
 
-        $this->assertEquals('456', $parser->getStreetNumber());
-        $this->assertEquals('Oak', $parser->getStreetName(false));
-        $this->assertEquals('N', $parser->getDirection());
-        $this->assertEquals('Apt 3B', $parser->getUnit());
-        $this->assertEquals('Chicago', $parser->getCity());
-        $this->assertTrue($parser->hasDirection());
-        $this->assertTrue($parser->hasUnit());
+        $this->assertEquals('456', $result->getStreetNumber());
+        $this->assertEquals('Oak', $result->getStreetName(false));
+        $this->assertEquals('N', $result->getDirection());
+        $this->assertEquals('Apt 3B', $result->getUnit());
+        $this->assertEquals('Chicago', $result->getCity());
+        $this->assertTrue($result->hasDirection());
+        $this->assertTrue($result->hasUnit());
     }
 
     public function testParseMultiLineAddressWithUnitOnOwnLine(): void
     {
         $parser = new AddressParser();
-        $parser->parse("123 Main St\nApt 4B\nSpringfield, IL 62704");
+        $result = $parser->parse("123 Main St\nApt 4B\nSpringfield, IL 62704");
 
-        $this->assertEquals('123', $parser->getStreetNumber());
-        $this->assertEquals('Main', $parser->getStreetName(false));
-        $this->assertEquals('Apt 4B', $parser->getUnit());
-        $this->assertEquals('Springfield', $parser->getCity());
-        $this->assertEquals('IL', $parser->getStateCode());
-        $this->assertEquals('62704', $parser->getPostalCode());
+        $this->assertEquals('123', $result->getStreetNumber());
+        $this->assertEquals('Main', $result->getStreetName(false));
+        $this->assertEquals('Apt 4B', $result->getUnit());
+        $this->assertEquals('Springfield', $result->getCity());
+        $this->assertEquals('IL', $result->getStateCode());
+        $this->assertEquals('62704', $result->getPostalCode());
     }
 
     public function testGetStreetNamePrefixesDirectionWhenItPrecedesStreetName(): void
     {
         $parser = new AddressParser();
-        $parser->parse('456 N Oak Avenue, Chicago, IL 60614');
+        $result = $parser->parse('456 N Oak Avenue, Chicago, IL 60614');
 
-        $this->assertEquals('N Oak', $parser->getStreetName());
-        $this->assertEquals('Oak', $parser->getStreetName(false));
+        $this->assertEquals('N Oak', $result->getStreetName());
+        $this->assertEquals('Oak', $result->getStreetName(false));
     }
 
     public function testGetStreetNameSuffixesDirectionWhenItFollowsStreetName(): void
     {
         $parser = new AddressParser();
-        $parser->parse('123 Main St S, Springfield, IL 62704');
+        $result = $parser->parse('123 Main St S, Springfield, IL 62704');
 
-        $this->assertEquals('Main S', $parser->getStreetName());
-        $this->assertEquals('Main', $parser->getStreetName(false));
+        $this->assertEquals('Main S', $result->getStreetName());
+        $this->assertEquals('Main', $result->getStreetName(false));
     }
 
     public function testParseSplitsZipPlus4FromDashedPostalCode(): void
     {
         $parser = new AddressParser();
-        $parser->parse('100 Main St, Anytown, IL 90210-1234');
+        $result = $parser->parse('100 Main St, Anytown, IL 90210-1234');
 
-        $this->assertEquals('90210', $parser->getPostalCode());
-        $this->assertEquals('1234', $parser->getZip4());
-        $this->assertTrue($parser->hasZip4());
+        $this->assertEquals('90210', $result->getPostalCode());
+        $this->assertEquals('1234', $result->getZip4());
+        $this->assertTrue($result->hasZip4());
     }
 
     public function testParseCanadianAddress(): void
     {
         $parser = new AddressParser();
-        $parser->parse('789 Elm St, Toronto, ON M4B1B3, Canada');
+        $result = $parser->parse('789 Elm St, Toronto, ON M4B1B3, Canada');
 
-        $this->assertEquals('789', $parser->getStreetNumber());
-        $this->assertEquals('Toronto', $parser->getCity());
-        $this->assertEquals('M4B1B3', $parser->getPostalCode());
+        $this->assertEquals('789', $result->getStreetNumber());
+        $this->assertEquals('Toronto', $result->getCity());
+        $this->assertEquals('M4B1B3', $result->getPostalCode());
     }
 
     /**
@@ -150,10 +150,10 @@ class AddressParserTest extends TestCase
     public function testParseRecognizesCityNotInDataset(): void
     {
         $parser = new AddressParser();
-        $parser->parse('4500 Park Granada, Calabasas, CA 91302');
+        $result = $parser->parse('4500 Park Granada, Calabasas, CA 91302');
 
-        $this->assertEquals('Calabasas', $parser->getCity());
-        $this->assertTrue($parser->hasCity());
+        $this->assertEquals('Calabasas', $result->getCity());
+        $this->assertTrue($result->hasCity());
     }
 
     /**
@@ -165,12 +165,12 @@ class AddressParserTest extends TestCase
     public function testParseCaliforniaAddressIsNotMisdetectedAsCanada(): void
     {
         $parser = new AddressParser();
-        $parser->parse('2 Rodeo Dr, Beverly Hills, CA 90210');
+        $result = $parser->parse('2 Rodeo Dr, Beverly Hills, CA 90210');
 
-        $this->assertEquals('US', $parser->getCountry());
-        $this->assertEquals('CA', $parser->getStateCode());
-        $this->assertEquals('California', $parser->getStateName());
-        $this->assertEquals('Beverly Hills', $parser->getCity());
+        $this->assertEquals('US', $result->getCountry());
+        $this->assertEquals('CA', $result->getStateCode());
+        $this->assertEquals('California', $result->getStateName());
+        $this->assertEquals('Beverly Hills', $result->getCity());
     }
 
     /**
@@ -180,11 +180,11 @@ class AddressParserTest extends TestCase
     public function testSuffixDirectionIsNotDuplicatedIntoUnit(): void
     {
         $parser = new AddressParser();
-        $parser->parse('1600 Pennsylvania Avenue NW, Washington, DC 20500');
+        $result = $parser->parse('1600 Pennsylvania Avenue NW, Washington, DC 20500');
 
-        $this->assertEquals('NW', $parser->getDirection());
-        $this->assertNull($parser->getUnit());
-        $this->assertFalse($parser->hasUnit());
+        $this->assertEquals('NW', $result->getDirection());
+        $this->assertNull($result->getUnit());
+        $this->assertFalse($result->hasUnit());
     }
 
     /**
@@ -194,31 +194,31 @@ class AddressParserTest extends TestCase
     public function testRouteTypeWordInsideStreetNameIsNotMistakenForARouteType(): void
     {
         $parser = new AddressParser();
-        $parser->parse('4500 Park Granada, Calabasas, CA 91302');
+        $result = $parser->parse('4500 Park Granada, Calabasas, CA 91302');
 
-        $this->assertEquals('Park Granada', $parser->getStreetName(false));
-        $this->assertNull($parser->getRouteType());
+        $this->assertEquals('Park Granada', $result->getStreetName(false));
+        $this->assertNull($result->getRouteType());
     }
 
     public function testParsePoBoxAddress(): void
     {
         $parser = new AddressParser();
-        $parser->parse('PO Box 1234, Austin, TX 73301');
+        $result = $parser->parse('PO Box 1234, Austin, TX 73301');
 
-        $this->assertTrue($parser->isPoBox());
-        $this->assertEquals('PO Box 1234', $parser->getStreetName(false));
-        $this->assertNull($parser->getStreetNumber());
-        $this->assertEquals('Austin', $parser->getCity());
-        $this->assertEquals('TX', $parser->getStateCode());
-        $this->assertEquals('73301', $parser->getPostalCode());
+        $this->assertTrue($result->isPoBox());
+        $this->assertEquals('PO Box 1234', $result->getStreetName(false));
+        $this->assertNull($result->getStreetNumber());
+        $this->assertEquals('Austin', $result->getCity());
+        $this->assertEquals('TX', $result->getStateCode());
+        $this->assertEquals('73301', $result->getPostalCode());
     }
 
     public function testIsPoBoxDefaultsToFalse(): void
     {
         $parser = new AddressParser();
-        $parser->parse('123 Main St, Springfield, IL 62704');
+        $result = $parser->parse('123 Main St, Springfield, IL 62704');
 
-        $this->assertFalse($parser->isPoBox());
+        $this->assertFalse($result->isPoBox());
     }
 
     /**
@@ -229,12 +229,12 @@ class AddressParserTest extends TestCase
     public function testParseCommaLessAddressWithCityEndingInRouteTypeWord(): void
     {
         $parser = new AddressParser();
-        $parser->parse('2 Rodeo Dr Beverly Hills CA 90210');
+        $result = $parser->parse('2 Rodeo Dr Beverly Hills CA 90210');
 
-        $this->assertEquals('2', $parser->getStreetNumber());
-        $this->assertEquals('Rodeo', $parser->getStreetName(false));
-        $this->assertEquals('Dr', $parser->getRouteType());
-        $this->assertEquals('Beverly Hills', $parser->getCity());
+        $this->assertEquals('2', $result->getStreetNumber());
+        $this->assertEquals('Rodeo', $result->getStreetName(false));
+        $this->assertEquals('Dr', $result->getRouteType());
+        $this->assertEquals('Beverly Hills', $result->getCity());
     }
 
     /**
@@ -245,11 +245,11 @@ class AddressParserTest extends TestCase
     public function testParseCommaLessAddressWithStreetNameStartingInRouteTypeWord(): void
     {
         $parser = new AddressParser();
-        $parser->parse('123 Park Ave Springfield IL 62701');
+        $result = $parser->parse('123 Park Ave Springfield IL 62701');
 
-        $this->assertEquals('Park', $parser->getStreetName(false));
-        $this->assertEquals('Ave', $parser->getRouteType());
-        $this->assertEquals('Springfield', $parser->getCity());
+        $this->assertEquals('Park', $result->getStreetName(false));
+        $this->assertEquals('Ave', $result->getRouteType());
+        $this->assertEquals('Springfield', $result->getCity());
     }
 
     /**
@@ -265,14 +265,14 @@ class AddressParserTest extends TestCase
     public function testParseCityStartingWithRouteTypeWordIsNotSplitAndDropped(): void
     {
         $parser = new AddressParser();
-        $parser->parse('55 Winding Way, Lake Forest, IL 60045');
+        $result = $parser->parse('55 Winding Way, Lake Forest, IL 60045');
 
-        $this->assertEquals('55', $parser->getStreetNumber());
-        $this->assertEquals('Winding', $parser->getStreetName(false));
-        $this->assertEquals('Way', $parser->getRouteType());
-        $this->assertEquals('Lake Forest', $parser->getCity());
-        $this->assertEquals('IL', $parser->getStateCode());
-        $this->assertEquals('60045', $parser->getPostalCode());
+        $this->assertEquals('55', $result->getStreetNumber());
+        $this->assertEquals('Winding', $result->getStreetName(false));
+        $this->assertEquals('Way', $result->getRouteType());
+        $this->assertEquals('Lake Forest', $result->getCity());
+        $this->assertEquals('IL', $result->getStateCode());
+        $this->assertEquals('60045', $result->getPostalCode());
     }
 
     /**
@@ -284,11 +284,11 @@ class AddressParserTest extends TestCase
     public function testParseCityOnlyAddressStartingWithRouteTypeWordIsNotSplit(): void
     {
         $parser = new AddressParser();
-        $parser->parse('Lake Forest, IL 60045');
+        $result = $parser->parse('Lake Forest, IL 60045');
 
-        $this->assertEquals('Lake Forest', $parser->getCity());
-        $this->assertNull($parser->getRouteType());
-        $this->assertNull($parser->getStreetName(false));
+        $this->assertEquals('Lake Forest', $result->getCity());
+        $this->assertNull($result->getRouteType());
+        $this->assertNull($result->getStreetName(false));
     }
 
     /**
@@ -299,12 +299,12 @@ class AddressParserTest extends TestCase
     public function testParseDoesNotMistakeALeadingRecipientLineForTheStreet(): void
     {
         $parser = new AddressParser();
-        $parser->parse('John Smith, 123 Main St, Springfield, IL 62704');
+        $result = $parser->parse('John Smith, 123 Main St, Springfield, IL 62704');
 
-        $this->assertEquals('123', $parser->getStreetNumber());
-        $this->assertEquals('Main', $parser->getStreetName(false));
-        $this->assertEquals('St', $parser->getRouteType());
-        $this->assertEquals('Springfield', $parser->getCity());
+        $this->assertEquals('123', $result->getStreetNumber());
+        $this->assertEquals('Main', $result->getStreetName(false));
+        $this->assertEquals('St', $result->getRouteType());
+        $this->assertEquals('Springfield', $result->getCity());
     }
 
     /**
@@ -315,12 +315,12 @@ class AddressParserTest extends TestCase
     public function testParseWithNoCityLeavesCityNullWithoutLosingTheStreet(): void
     {
         $parser = new AddressParser();
-        $parser->parse('123 Main St, IL 62704');
+        $result = $parser->parse('123 Main St, IL 62704');
 
-        $this->assertEquals('123', $parser->getStreetNumber());
-        $this->assertEquals('Main', $parser->getStreetName(false));
-        $this->assertEquals('St', $parser->getRouteType());
-        $this->assertNull($parser->getCity());
+        $this->assertEquals('123', $result->getStreetNumber());
+        $this->assertEquals('Main', $result->getStreetName(false));
+        $this->assertEquals('St', $result->getRouteType());
+        $this->assertNull($result->getCity());
     }
 
     /**
@@ -331,12 +331,12 @@ class AddressParserTest extends TestCase
     public function testParseWithSingleCommaBeforeCityStateZipStillFindsCity(): void
     {
         $parser = new AddressParser();
-        $parser->parse('123 Main St, Springfield IL 62704');
+        $result = $parser->parse('123 Main St, Springfield IL 62704');
 
-        $this->assertEquals('123', $parser->getStreetNumber());
-        $this->assertEquals('Main', $parser->getStreetName(false));
-        $this->assertEquals('St', $parser->getRouteType());
-        $this->assertEquals('Springfield', $parser->getCity());
+        $this->assertEquals('123', $result->getStreetNumber());
+        $this->assertEquals('Main', $result->getStreetName(false));
+        $this->assertEquals('St', $result->getRouteType());
+        $this->assertEquals('Springfield', $result->getCity());
     }
 
     /**
@@ -350,10 +350,10 @@ class AddressParserTest extends TestCase
     public function testParseDoesNotPromoteAWeaklyMatchingLaterLineOverAStreetWithNoRouteType(): void
     {
         $parser = new AddressParser();
-        $parser->parse('Broadway, 4th Floor, New York, NY 10001');
+        $result = $parser->parse('Broadway, 4th Floor, New York, NY 10001');
 
-        $this->assertEquals('Broadway', $parser->getStreetName(false));
-        $this->assertEquals('New York', $parser->getCity());
+        $this->assertEquals('Broadway', $result->getStreetName(false));
+        $this->assertEquals('New York', $result->getCity());
     }
 
     /**
@@ -363,36 +363,19 @@ class AddressParserTest extends TestCase
     public function testParsePoBoxWithNoCityGivenIsNotSwallowedAsCity(): void
     {
         $parser = new AddressParser();
-        $parser->parse('PO Box 1234, IL 62704');
+        $result = $parser->parse('PO Box 1234, IL 62704');
 
-        $this->assertTrue($parser->isPoBox());
-        $this->assertEquals('PO Box 1234', $parser->getStreetName(false));
-        $this->assertNull($parser->getCity());
-        $this->assertEquals('IL', $parser->getStateCode());
-        $this->assertEquals('62704', $parser->getPostalCode());
-    }
-
-    public function testHasMethodsDefaultToFalseBeforeParsing(): void
-    {
-        $parser = new AddressParser();
-
-        $this->assertFalse($parser->hasStreetNumber());
-        $this->assertFalse($parser->hasStreetName());
-        $this->assertFalse($parser->hasRouteType());
-        $this->assertFalse($parser->hasDirection());
-        $this->assertFalse($parser->hasUnit());
-        $this->assertFalse($parser->hasCity());
-        $this->assertFalse($parser->hasPostalCode());
-        $this->assertFalse($parser->hasZip4());
-        $this->assertFalse($parser->hasStateName());
-        $this->assertFalse($parser->hasStateCode());
-        $this->assertFalse($parser->hasCountry());
+        $this->assertTrue($result->isPoBox());
+        $this->assertEquals('PO Box 1234', $result->getStreetName(false));
+        $this->assertNull($result->getCity());
+        $this->assertEquals('IL', $result->getStateCode());
+        $this->assertEquals('62704', $result->getPostalCode());
     }
 
     public function testToArrayReturnsAllParsedFields(): void
     {
         $parser = new AddressParser();
-        $parser->parse('123 Main St, Springfield, IL 62704');
+        $result = $parser->parse('123 Main St, Springfield, IL 62704');
 
         $this->assertEquals([
             'streetNumber' => '123',
@@ -406,39 +389,39 @@ class AddressParserTest extends TestCase
             'stateName'    => 'Illinois',
             'stateCode'    => 'IL',
             'country'      => 'US',
-        ], $parser->toArray());
+        ], $result->toArray());
     }
 
     public function testGetFullAddressWithStateCode(): void
     {
         $parser = new AddressParser();
-        $parser->parse('123 Main St, Springfield, IL 62704');
+        $result = $parser->parse('123 Main St, Springfield, IL 62704');
 
-        $this->assertEquals('123 Main St, Springfield, IL 62704', $parser->getFullAddress());
+        $this->assertEquals('123 Main St, Springfield, IL 62704', $result->getFullAddress());
     }
 
     public function testGetFullAddressWithStateNameInsteadOfCode(): void
     {
         $parser = new AddressParser();
-        $parser->parse('123 Main St, Springfield, IL 62704');
+        $result = $parser->parse('123 Main St, Springfield, IL 62704');
 
-        $this->assertEquals('123 Main St, Springfield, Illinois 62704', $parser->getFullAddress(', ', false));
+        $this->assertEquals('123 Main St, Springfield, Illinois 62704', $result->getFullAddress(', ', false));
     }
 
     public function testGetFullAddressCanIncludeCountry(): void
     {
         $parser = new AddressParser();
-        $parser->parse('123 Main St, Springfield, IL 62704');
+        $result = $parser->parse('123 Main St, Springfield, IL 62704');
 
-        $this->assertEquals('123 Main St, Springfield, IL 62704, US', $parser->getFullAddress(', ', true, true));
+        $this->assertEquals('123 Main St, Springfield, IL 62704, US', $result->getFullAddress(', ', true, true));
     }
 
     public function testToStringMatchesGetFullAddress(): void
     {
         $parser = new AddressParser();
-        $parser->parse('123 Main St, Springfield, IL 62704');
+        $result = $parser->parse('123 Main St, Springfield, IL 62704');
 
-        $this->assertEquals($parser->getFullAddress(), (string) $parser);
+        $this->assertEquals($result->getFullAddress(), (string) $result);
     }
 
     public function testParseStreetAddressOnlyParsesLocationPortion(): void

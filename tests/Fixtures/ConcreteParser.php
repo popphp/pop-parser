@@ -3,14 +3,15 @@
 namespace Pop\Parser\Test\Fixtures;
 
 use Pop\Parser\AbstractParser;
+use Pop\Parser\AbstractResult;
 
 class ConcreteParser extends AbstractParser
 {
 
-    public function parse(): static
+    public function parse(): AbstractResult
     {
-        $this->result = $this->data;
-        return $this;
+        $this->result = new ConcreteResult($this->data);
+        return $this->result;
     }
 
     public function triggerError(string $message): static

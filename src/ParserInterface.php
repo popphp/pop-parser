@@ -30,9 +30,9 @@ interface ParserInterface
     /**
      * Parse method
      *
-     * @return static
+     * @return AbstractResult
      */
-    public function parse(): static;
+    public function parse(): AbstractResult;
 
     /**
      * Get data
@@ -52,9 +52,9 @@ interface ParserInterface
     /**
      * Get parsed result
      *
-     * @return mixed
+     * @return ?AbstractResult
      */
-    public function getResult(): mixed;
+    public function getResult(): ?AbstractResult;
 
     /**
      * Check if there is an error

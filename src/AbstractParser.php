@@ -46,17 +46,17 @@ abstract class AbstractParser implements ParserInterface
     protected ?string $errorMessage = null;
 
     /**
-     * Parsed result
-     * @var mixed
+     * Result object
+     * @var ?AbstractResult
      */
-    protected mixed $result = null;
+    protected ?AbstractResult $result = null;
 
     /**
      * Parse method
      *
-     * @return static
+     * @return AbstractResult
      */
-    abstract public function parse(): static;
+    abstract public function parse(): AbstractResult;
 
     /**
      * Constructor
@@ -97,9 +97,9 @@ abstract class AbstractParser implements ParserInterface
     /**
      * Get parsed result
      *
-     * @return mixed
+     * @return ?AbstractResult
      */
-    public function getResult(): mixed
+    public function getResult(): ?AbstractResult
     {
         return $this->result;
     }

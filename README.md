@@ -24,8 +24,9 @@ parsers - no third-party parsing dependencies required:
   "Last, First" format.
 
 Both parsers extend the same `Pop\Parser\AbstractParser` base class and share a consistent shape:
-construct with or without data, call `parse()`, then read the results off via `get*()`/`has*()`
-methods, `toArray()`, or by casting to a string.
+construct with or without data, call `parse()`, which returns an immutable result object
+(`AddressResult`/`NameResult`) - read the parsed fields off *that* via `get*()`/`has*()` methods,
+`toArray()`, or by casting it to a string. The parser itself holds no parsed fields.
 
 [Top](#pop-parser)
 
@@ -58,17 +59,17 @@ and a multi-line mailing-label style address parse the same way.
 use Pop\Parser\Address\AddressParser;
 
 $parser = new AddressParser();
-$parser->parse('123 Main St Apt 4B, Springfield, IL 62704');
+$result = $parser->parse('123 Main St Apt 4B, Springfield, IL 62704');
 
-$parser->getStreetNumber(); // '123'
-$parser->getStreetName();   // 'Main'
-$parser->getRouteType();    // 'St'
-$parser->getUnit();         // 'Apt 4B'
-$parser->getCity();         // 'Springfield'
-$parser->getStateCode();    // 'IL'
-$parser->getStateName();    // 'Illinois'
-$parser->getPostalCode();   // '62704'
-$parser->getCountry();      // 'US'
+$result->getStreetNumber(); // '123'
+$result->getStreetName();   // 'Main'
+$result->getRouteType();    // 'St'
+$result->getUnit();         // 'Apt 4B'
+$result->getCity();         // 'Springfield'
+$result->getStateCode();    // 'IL'
+$result->getStateName();    // 'Illinois'
+$result->getPostalCode();   // '62704'
+$result->getCountry();      // 'US'
 ```
 
 The address string can also be passed to the constructor, or set separately with `setData()`
@@ -76,7 +77,7 @@ before calling `parse()` with no argument:
 
 ```php
 $parser = new AddressParser('123 Main St, Springfield, IL 62704');
-$parser->parse();
+$result = $parser->parse();
 ```
 
 ### Directions and route types
@@ -87,12 +88,12 @@ bare street name without it:
 
 ```php
 $parser = new AddressParser();
-$parser->parse('456 N Elm Street, Chicago, IL 60601');
+$result = $parser->parse('456 N Elm Street, Chicago, IL 60601');
 
-$parser->getDirection();          // 'N'
-$parser->getStreetName();         // 'N Elm'
-$parser->getStreetName(false);    // 'Elm'
-$parser->getRouteType();          // 'Street'
+$result->getDirection();          // 'N'
+$result->getStreetName();         // 'N Elm'
+$result->getStreetName(false);    // 'Elm'
+$result->getRouteType();          // 'Street'
 ```
 
 ### PO Boxes
@@ -103,24 +104,24 @@ directly - the box number is returned via `getStreetName()`, `getStreetNumber()`
 
 ```php
 $parser = new AddressParser();
-$parser->parse('PO Box 1234, Springfield, IL 62704');
+$result = $parser->parse('PO Box 1234, Springfield, IL 62704');
 
-$parser->isPoBox();       // true
-$parser->getStreetName(); // 'PO Box 1234'
-$parser->getCity();       // 'Springfield'
+$result->isPoBox();       // true
+$result->getStreetName(); // 'PO Box 1234'
+$result->getCity();       // 'Springfield'
 ```
 
 ### Full address, array output, and string casting
 
 ```php
-$parser->getFullAddress();
+$result->getFullAddress();
 // '123 Main St, Apt 4B, Springfield, IL 62704'
 
 // Options: delimiter, whether to use the state code vs. full state name, whether to include the country
-$parser->getFullAddress(', ', false, true);
+$result->getFullAddress(', ', false, true);
 // '123 Main St, Apt 4B, Springfield, Illinois 62704, US'
 
-$parser->toArray();
+$result->toArray();
 // [
 //     'streetNumber' => '123', 'streetName' => 'Main', 'routeType' => 'St',
 //     'direction' => null, 'unit' => 'Apt 4B', 'city' => 'Springfield',
@@ -128,13 +129,13 @@ $parser->toArray();
 //     'stateCode' => 'IL', 'country' => 'US',
 // ]
 
-(string) $parser; // same as getFullAddress()
+(string) $result; // same as getFullAddress()
 ```
 
-Every component getter (`getStreetNumber()`, `getStreetName()`, `getRouteType()`, `getDirection()`,
-`getUnit()`, `getCity()`, `getPostalCode()`, `getZip4()`, `getStateName()`, `getStateCode()`,
-`getCountry()`) has a matching `has*()` method (e.g. `hasUnit()`, `hasZip4()`) that returns `true`
-only when that part was actually found.
+Every component getter on `AddressResult` (`getStreetNumber()`, `getStreetName()`, `getRouteType()`,
+`getDirection()`, `getUnit()`, `getCity()`, `getPostalCode()`, `getZip4()`, `getStateName()`,
+`getStateCode()`, `getCountry()`) has a matching `has*()` method (e.g. `hasUnit()`, `hasZip4()`) that
+returns `true` only when that part was actually found.
 
 ### Reference data
 
@@ -165,22 +166,22 @@ Middle[, Suffix]" format, and recognizes salutations, suffixes, initials, lastna
 use Pop\Parser\Name\NameParser;
 
 $parser = new NameParser();
-$parser->parse('Dr. John Michael Smith Jr.');
+$result = $parser->parse('Dr. John Michael Smith Jr.');
 
-$parser->getSalutation(); // 'Dr.'
-$parser->getFirstname();  // 'John'
-$parser->getMiddlename(); // 'Michael'
-$parser->getLastname();   // 'Smith'
-$parser->getSuffix();     // 'Jr'
-$parser->getFullName();   // 'John Michael Smith'
-(string) $parser;         // 'Dr. John Michael Smith Jr'
+$result->getSalutation(); // 'Dr.'
+$result->getFirstname();  // 'John'
+$result->getMiddlename(); // 'Michael'
+$result->getLastname();   // 'Smith'
+$result->getSuffix();     // 'Jr'
+$result->getFullName();   // 'John Michael Smith'
+(string) $result;         // 'Dr. John Michael Smith Jr'
 ```
 
 As with `AddressParser`, the name string can be passed to the constructor instead of `parse()`:
 
 ```php
 $parser = new NameParser('John Smith');
-$parser->parse();
+$result = $parser->parse();
 ```
 
 ### Comma-separated format
@@ -189,12 +190,12 @@ A comma anywhere in the input switches to "Last, First Middle[, Suffix]" parsing
 
 ```php
 $parser = new NameParser();
-$parser->parse('Smith, John Michael, Jr');
+$result = $parser->parse('Smith, John Michael, Jr');
 
-$parser->getFirstname();  // 'John'
-$parser->getMiddlename(); // 'Michael'
-$parser->getLastname();   // 'Smith'
-$parser->getSuffix();     // 'Jr'
+$result->getFirstname();  // 'John'
+$result->getMiddlename(); // 'Michael'
+$result->getLastname();   // 'Smith'
+$result->getSuffix();     // 'Jr'
 ```
 
 ### Lastname prefixes
@@ -204,11 +205,11 @@ their own field rather than left attached to the lastname:
 
 ```php
 $parser = new NameParser();
-$parser->parse('Ludwig van Beethoven');
+$result = $parser->parse('Ludwig van Beethoven');
 
-$parser->getLastnamePrefix(); // 'van'
-$parser->getLastname();       // 'Beethoven'
-$parser->getFullName();       // 'Ludwig van Beethoven'
+$result->getLastnamePrefix(); // 'van'
+$result->getLastname();       // 'Beethoven'
+$result->getFullName();       // 'Ludwig van Beethoven'
 ```
 
 ### Initials and nicknames
@@ -219,35 +220,35 @@ nickname:
 
 ```php
 $parser = new NameParser();
-$parser->parse('J.R. "Bob" Smith');
+$result = $parser->parse('J.R. "Bob" Smith');
 
-$parser->getFirstname();    // 'J'
-$parser->getInitials();     // 'R'
-$parser->getNickname();     // 'Bob'
-$parser->getNickname(true); // '(Bob)'
-$parser->getLastname();     // 'Smith'
+$result->getFirstname();    // 'J'
+$result->getInitials();     // 'R'
+$result->getNickname();     // 'Bob'
+$result->getNickname(true); // '(Bob)'
+$result->getLastname();     // 'Smith'
 ```
 
 ### Full name, given name, array output, and string casting
 
 ```php
-$parser->getGivenName(); // firstname + initials + middlename, whichever are present
-$parser->getFullName();  // given name + lastname prefix + lastname
+$result->getGivenName(); // firstname + initials + middlename, whichever are present
+$result->getFullName();  // given name + lastname prefix + lastname
 
-$parser->toArray();
+$result->toArray();
 // [
 //     'salutation' => null, 'firstname' => 'John', 'initials' => null,
 //     'middlename' => 'Michael', 'nickname' => null, 'lastnamePrefix' => null,
 //     'lastname' => 'Smith', 'suffix' => 'Jr',
 // ]
 
-(string) $parser; // salutation + given name + nickname + lastname prefix + lastname + suffix
+(string) $result; // salutation + given name + nickname + lastname prefix + lastname + suffix
 ```
 
-Every component getter (`getSalutation()`, `getFirstname()`, `getMiddlename()`, `getNickname()`,
-`getInitials()`, `getLastnamePrefix()`, `getLastname()`, `getSuffix()`) has a matching `has*()`
-method (e.g. `hasSuffix()`, `hasNickname()`) that returns `true` only when that part was actually
-found.
+Every component getter on `NameResult` (`getSalutation()`, `getFirstname()`, `getMiddlename()`,
+`getNickname()`, `getInitials()`, `getLastnamePrefix()`, `getLastname()`, `getSuffix()`) has a
+matching `has*()` method (e.g. `hasSuffix()`, `hasNickname()`) that returns `true` only when that
+part was actually found.
 
 ### Reference data
 

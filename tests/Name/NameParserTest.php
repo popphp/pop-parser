@@ -34,101 +34,101 @@ class NameParserTest extends TestCase
     public function testParseWithNoArgumentUsesConstructorData(): void
     {
         $parser = new NameParser('James Norrington');
-        $parser->parse();
+        $result = $parser->parse();
 
-        $this->assertEquals('James', $parser->getFirstname());
+        $this->assertEquals('James', $result->getFirstname());
     }
 
     public function testParseArgumentUpdatesDataWhenConstructorDataWasAlreadySet(): void
     {
         $parser = new NameParser('James Norrington');
-        $parser->parse('Elizabeth Swann');
+        $result = $parser->parse('Elizabeth Swann');
 
         $this->assertEquals('Elizabeth Swann', $parser->getData());
-        $this->assertEquals('Elizabeth', $parser->getFirstname());
+        $this->assertEquals('Elizabeth', $result->getFirstname());
     }
 
     public function testParseSimpleFirstLast(): void
     {
         $parser = new NameParser();
-        $parser->parse('James Norrington');
+        $result = $parser->parse('James Norrington');
 
-        $this->assertEquals('James', $parser->getFirstname());
-        $this->assertEquals('Norrington', $parser->getLastname());
-        $this->assertTrue($parser->hasFirstname());
-        $this->assertTrue($parser->hasLastname());
+        $this->assertEquals('James', $result->getFirstname());
+        $this->assertEquals('Norrington', $result->getLastname());
+        $this->assertTrue($result->hasFirstname());
+        $this->assertTrue($result->hasLastname());
     }
 
     public function testParseFirstMiddleLast(): void
     {
         $parser = new NameParser();
-        $parser->parse('Hans Christian Anderssen');
+        $result = $parser->parse('Hans Christian Anderssen');
 
-        $this->assertEquals('Hans', $parser->getFirstname());
-        $this->assertEquals('Christian', $parser->getMiddlename());
-        $this->assertEquals('Anderssen', $parser->getLastname());
+        $this->assertEquals('Hans', $result->getFirstname());
+        $this->assertEquals('Christian', $result->getMiddlename());
+        $this->assertEquals('Anderssen', $result->getLastname());
     }
 
     public function testParseSingleWordIsFirstnameOnly(): void
     {
         $parser = new NameParser();
-        $parser->parse('Adam');
+        $result = $parser->parse('Adam');
 
-        $this->assertEquals('Adam', $parser->getFirstname());
-        $this->assertNull($parser->getLastname());
+        $this->assertEquals('Adam', $result->getFirstname());
+        $this->assertNull($result->getLastname());
     }
 
     public function testParseSalutationInitialPrefixedLastnameAndSuffix(): void
     {
         $parser = new NameParser();
-        $parser->parse('Mr Anthony R Von Fange III');
+        $result = $parser->parse('Mr Anthony R Von Fange III');
 
-        $this->assertEquals('Mr.', $parser->getSalutation());
-        $this->assertEquals('Anthony', $parser->getFirstname());
-        $this->assertEquals('R', $parser->getInitials());
-        $this->assertEquals('von', $parser->getLastnamePrefix());
-        $this->assertEquals('Fange', $parser->getLastname());
-        $this->assertEquals('III', $parser->getSuffix());
+        $this->assertEquals('Mr.', $result->getSalutation());
+        $this->assertEquals('Anthony', $result->getFirstname());
+        $this->assertEquals('R', $result->getInitials());
+        $this->assertEquals('von', $result->getLastnamePrefix());
+        $this->assertEquals('Fange', $result->getLastname());
+        $this->assertEquals('III', $result->getSuffix());
     }
 
     public function testParseConsecutiveSalutationsAreBothClaimed(): void
     {
         $parser = new NameParser();
-        $parser->parse('Rev. Dr John Doe');
+        $result = $parser->parse('Rev. Dr John Doe');
 
-        $this->assertEquals('Rev. Dr.', $parser->getSalutation());
-        $this->assertEquals('John', $parser->getFirstname());
-        $this->assertEquals('Doe', $parser->getLastname());
+        $this->assertEquals('Rev. Dr.', $result->getSalutation());
+        $this->assertEquals('John', $result->getFirstname());
+        $this->assertEquals('Doe', $result->getLastname());
     }
 
     public function testParseDottedInitialsPromoteFirstOneToFirstname(): void
     {
         $parser = new NameParser();
-        $parser->parse('J. B. Hunt');
+        $result = $parser->parse('J. B. Hunt');
 
-        $this->assertEquals('J.', $parser->getFirstname());
-        $this->assertEquals('B.', $parser->getInitials());
-        $this->assertEquals('Hunt', $parser->getLastname());
+        $this->assertEquals('J.', $result->getFirstname());
+        $this->assertEquals('B.', $result->getInitials());
+        $this->assertEquals('Hunt', $result->getLastname());
     }
 
     public function testParseCombinedTwoLetterInitialsAreSplit(): void
     {
         $parser = new NameParser();
-        $parser->parse('J.B. Hunt');
+        $result = $parser->parse('J.B. Hunt');
 
-        $this->assertEquals('J', $parser->getFirstname());
-        $this->assertEquals('B', $parser->getInitials());
-        $this->assertEquals('Hunt', $parser->getLastname());
+        $this->assertEquals('J', $result->getFirstname());
+        $this->assertEquals('B', $result->getInitials());
+        $this->assertEquals('Hunt', $result->getLastname());
     }
 
     public function testParseSingleInitialWithRealFirstnamePresent(): void
     {
         $parser = new NameParser();
-        $parser->parse('M Peter Williams');
+        $result = $parser->parse('M Peter Williams');
 
-        $this->assertEquals('Peter', $parser->getFirstname());
-        $this->assertEquals('M', $parser->getInitials());
-        $this->assertEquals('Williams', $parser->getLastname());
+        $this->assertEquals('Peter', $result->getFirstname());
+        $this->assertEquals('M', $result->getInitials());
+        $this->assertEquals('Williams', $result->getLastname());
     }
 
     /**
@@ -139,21 +139,21 @@ class NameParserTest extends TestCase
     public function testParseTwoTokenNameNeverTreatsSecondWordAsSuffix(): void
     {
         $parser = new NameParser();
-        $parser->parse('Jason Senior');
+        $result = $parser->parse('Jason Senior');
 
-        $this->assertEquals('Jason', $parser->getFirstname());
-        $this->assertEquals('Senior', $parser->getLastname());
-        $this->assertNull($parser->getSuffix());
+        $this->assertEquals('Jason', $result->getFirstname());
+        $this->assertEquals('Senior', $result->getLastname());
+        $this->assertNull($result->getSuffix());
     }
 
     public function testParseMultipleTrailingSuffixesAreAllClaimed(): void
     {
         $parser = new NameParser();
-        $parser->parse('Edward Dale Senior II');
+        $result = $parser->parse('Edward Dale Senior II');
 
-        $this->assertEquals('Edward', $parser->getFirstname());
-        $this->assertEquals('Dale', $parser->getLastname());
-        $this->assertEquals('Senior II', $parser->getSuffix());
+        $this->assertEquals('Edward', $result->getFirstname());
+        $this->assertEquals('Dale', $result->getLastname());
+        $this->assertEquals('Senior II', $result->getSuffix());
     }
 
     /**
@@ -163,35 +163,35 @@ class NameParserTest extends TestCase
      */
     public function testParseNormalizesMonotoneCaseButPreservesMixedCase(): void
     {
-        $allCaps = new NameParser();
-        $allCaps->parse('OLD MACDONALD');
-        $this->assertEquals('Old', $allCaps->getFirstname());
-        $this->assertEquals('Macdonald', $allCaps->getLastname());
+        $allCaps       = new NameParser();
+        $allCapsResult = $allCaps->parse('OLD MACDONALD');
+        $this->assertEquals('Old', $allCapsResult->getFirstname());
+        $this->assertEquals('Macdonald', $allCapsResult->getLastname());
 
-        $mixedCase = new NameParser();
-        $mixedCase->parse('Old MacDonald');
-        $this->assertEquals('MacDonald', $mixedCase->getLastname());
+        $mixedCase       = new NameParser();
+        $mixedCaseResult = $mixedCase->parse('Old MacDonald');
+        $this->assertEquals('MacDonald', $mixedCaseResult->getLastname());
     }
 
     public function testParseLastnamePrefix(): void
     {
         $parser = new NameParser();
-        $parser->parse('James van Allen');
+        $result = $parser->parse('James van Allen');
 
-        $this->assertEquals('James', $parser->getFirstname());
-        $this->assertEquals('van', $parser->getLastnamePrefix());
-        $this->assertEquals('Allen', $parser->getLastname());
-        $this->assertTrue($parser->hasLastnamePrefix());
+        $this->assertEquals('James', $result->getFirstname());
+        $this->assertEquals('van', $result->getLastnamePrefix());
+        $this->assertEquals('Allen', $result->getLastname());
+        $this->assertTrue($result->hasLastnamePrefix());
     }
 
     public function testParseChainedLastnamePrefixes(): void
     {
         $parser = new NameParser();
-        $parser->parse('Ludwig van der Berg');
+        $result = $parser->parse('Ludwig van der Berg');
 
-        $this->assertEquals('Ludwig', $parser->getFirstname());
-        $this->assertEquals('van der', $parser->getLastnamePrefix());
-        $this->assertEquals('Berg', $parser->getLastname());
+        $this->assertEquals('Ludwig', $result->getFirstname());
+        $this->assertEquals('van der', $result->getLastnamePrefix());
+        $this->assertEquals('Berg', $result->getLastname());
     }
 
     /**
@@ -201,70 +201,70 @@ class NameParserTest extends TestCase
     public function testParsePrefixWordAsFirstnameWhenNothingPrecedesIt(): void
     {
         $parser = new NameParser();
-        $parser->parse('Mr. Van Truong');
+        $result = $parser->parse('Mr. Van Truong');
 
-        $this->assertEquals('Mr.', $parser->getSalutation());
-        $this->assertEquals('Van', $parser->getFirstname());
-        $this->assertNull($parser->getLastnamePrefix());
-        $this->assertEquals('Truong', $parser->getLastname());
+        $this->assertEquals('Mr.', $result->getSalutation());
+        $this->assertEquals('Van', $result->getFirstname());
+        $this->assertNull($result->getLastnamePrefix());
+        $this->assertEquals('Truong', $result->getLastname());
     }
 
     public function testParseNicknameInParentheses(): void
     {
         $parser = new NameParser();
-        $parser->parse('Jimmy (Bubba) Smith');
+        $result = $parser->parse('Jimmy (Bubba) Smith');
 
-        $this->assertEquals('Jimmy', $parser->getFirstname());
-        $this->assertEquals('Bubba', $parser->getNickname());
-        $this->assertEquals('Smith', $parser->getLastname());
-        $this->assertEquals('(Bubba)', $parser->getNickname(true));
+        $this->assertEquals('Jimmy', $result->getFirstname());
+        $this->assertEquals('Bubba', $result->getNickname());
+        $this->assertEquals('Smith', $result->getLastname());
+        $this->assertEquals('(Bubba)', $result->getNickname(true));
     }
 
     public function testParseMultiWordNicknameInQuotes(): void
     {
         $parser = new NameParser();
-        $parser->parse('Jimmy "Bubba Junior" Smith');
+        $result = $parser->parse('Jimmy "Bubba Junior" Smith');
 
-        $this->assertEquals('Bubba Junior', $parser->getNickname());
+        $this->assertEquals('Bubba Junior', $result->getNickname());
     }
 
     public function testParseCommaModeLastFirst(): void
     {
         $parser = new NameParser();
-        $parser->parse('Fraser, Joshua');
+        $result = $parser->parse('Fraser, Joshua');
 
-        $this->assertEquals('Joshua', $parser->getFirstname());
-        $this->assertEquals('Fraser', $parser->getLastname());
+        $this->assertEquals('Joshua', $result->getFirstname());
+        $this->assertEquals('Fraser', $result->getLastname());
     }
 
     public function testParseCommaModeWithSalutation(): void
     {
         $parser = new NameParser();
-        $parser->parse('Mrs. Brown, Amanda');
+        $result = $parser->parse('Mrs. Brown, Amanda');
 
-        $this->assertEquals('Mrs.', $parser->getSalutation());
-        $this->assertEquals('Amanda', $parser->getFirstname());
-        $this->assertEquals('Brown', $parser->getLastname());
+        $this->assertEquals('Mrs.', $result->getSalutation());
+        $this->assertEquals('Amanda', $result->getFirstname());
+        $this->assertEquals('Brown', $result->getLastname());
     }
 
     public function testParseCommaModeLastFirstMiddle(): void
     {
         $parser = new NameParser();
-        $parser->parse('Smith, John Eric');
+        $result = $parser->parse('Smith, John Eric');
 
-        $this->assertEquals('Smith', $parser->getLastname());
-        $this->assertEquals('John', $parser->getFirstname());
-        $this->assertEquals('Eric', $parser->getMiddlename());
+        $this->assertEquals('Smith', $result->getLastname());
+        $this->assertEquals('John', $result->getFirstname());
+        $this->assertEquals('Eric', $result->getMiddlename());
     }
 
     public function testParseCommaModeThreeSegmentsWithSuffix(): void
     {
         $parser = new NameParser();
-        $parser->parse('Williams, Hank, Jr.');
+        $result = $parser->parse('Williams, Hank, Jr.');
 
-        $this->assertEquals('Hank', $parser->getFirstname());
-        $this->assertEquals('Williams', $parser->getLastname());
-        $this->assertEquals('Jr', $parser->getSuffix());
+        $this->assertEquals('Hank', $result->getFirstname());
+        $this->assertEquals('Williams', $result->getLastname());
+        $this->assertEquals('Jr', $result->getSuffix());
     }
 
     /**
@@ -275,12 +275,12 @@ class NameParserTest extends TestCase
     public function testParseCommaModeFirstSegmentContainsFullNamePlusSuffix(): void
     {
         $parser = new NameParser();
-        $parser->parse('Anthony Von Fange III, PHD');
+        $result = $parser->parse('Anthony Von Fange III, PHD');
 
-        $this->assertEquals('Anthony', $parser->getFirstname());
-        $this->assertEquals('von', $parser->getLastnamePrefix());
-        $this->assertEquals('Fange', $parser->getLastname());
-        $this->assertEquals('III PhD', $parser->getSuffix());
+        $this->assertEquals('Anthony', $result->getFirstname());
+        $this->assertEquals('von', $result->getLastnamePrefix());
+        $this->assertEquals('Fange', $result->getLastname());
+        $this->assertEquals('III PhD', $result->getSuffix());
     }
 
     /**
@@ -292,52 +292,52 @@ class NameParserTest extends TestCase
     public function testParseCommaModeFirstSegmentMultiWordLeftoverSplitsIntoFirstnameAndMiddlename(): void
     {
         $parser = new NameParser();
-        $parser->parse('John Michael Smith, MD');
+        $result = $parser->parse('John Michael Smith, MD');
 
-        $this->assertEquals('John', $parser->getFirstname());
-        $this->assertEquals('Michael', $parser->getMiddlename());
-        $this->assertEquals('Smith', $parser->getLastname());
-        $this->assertEquals('MD', $parser->getSuffix());
+        $this->assertEquals('John', $result->getFirstname());
+        $this->assertEquals('Michael', $result->getMiddlename());
+        $this->assertEquals('Smith', $result->getLastname());
+        $this->assertEquals('MD', $result->getSuffix());
     }
 
     public function testParseCommaModeWithInitial(): void
     {
         $parser = new NameParser();
-        $parser->parse('Kirk, James T.');
+        $result = $parser->parse('Kirk, James T.');
 
-        $this->assertEquals('James', $parser->getFirstname());
-        $this->assertEquals('T.', $parser->getInitials());
-        $this->assertEquals('Kirk', $parser->getLastname());
+        $this->assertEquals('James', $result->getFirstname());
+        $this->assertEquals('T.', $result->getInitials());
+        $this->assertEquals('Kirk', $result->getLastname());
     }
 
     public function testGetGivenNameCombinesFirstnameInitialsAndMiddlename(): void
     {
         $parser = new NameParser();
-        $parser->parse('Mr Anthony R Von Fange III');
+        $result = $parser->parse('Mr Anthony R Von Fange III');
 
-        $this->assertEquals('Anthony R', $parser->getGivenName());
+        $this->assertEquals('Anthony R', $result->getGivenName());
     }
 
     public function testGetFullNameCombinesGivenNamePrefixAndLastname(): void
     {
         $parser = new NameParser();
-        $parser->parse('Mr Anthony R Von Fange III');
+        $result = $parser->parse('Mr Anthony R Von Fange III');
 
-        $this->assertEquals('Anthony R von Fange', $parser->getFullName());
+        $this->assertEquals('Anthony R von Fange', $result->getFullName());
     }
 
     public function testToStringComposesAllParts(): void
     {
         $parser = new NameParser();
-        $parser->parse('Jimmy (Bubba) Smith');
+        $result = $parser->parse('Jimmy (Bubba) Smith');
 
-        $this->assertEquals('Jimmy (Bubba) Smith', (string) $parser);
+        $this->assertEquals('Jimmy (Bubba) Smith', (string) $result);
     }
 
     public function testToArrayReturnsAllParsedFields(): void
     {
         $parser = new NameParser();
-        $parser->parse('Mr Anthony R Von Fange III');
+        $result = $parser->parse('Mr Anthony R Von Fange III');
 
         $this->assertEquals([
             'salutation'     => 'Mr.',
@@ -348,21 +348,7 @@ class NameParserTest extends TestCase
             'lastnamePrefix' => 'von',
             'lastname'       => 'Fange',
             'suffix'         => 'III',
-        ], $parser->toArray());
-    }
-
-    public function testHasMethodsDefaultToFalseBeforeParsing(): void
-    {
-        $parser = new NameParser();
-
-        $this->assertFalse($parser->hasSalutation());
-        $this->assertFalse($parser->hasFirstname());
-        $this->assertFalse($parser->hasMiddlename());
-        $this->assertFalse($parser->hasNickname());
-        $this->assertFalse($parser->hasInitials());
-        $this->assertFalse($parser->hasLastnamePrefix());
-        $this->assertFalse($parser->hasLastname());
-        $this->assertFalse($parser->hasSuffix());
+        ], $result->toArray());
     }
 
     /**
@@ -373,12 +359,12 @@ class NameParserTest extends TestCase
     public function testParseNeverSilentlyDropsAnUnrecognizedLeadingWord(): void
     {
         $parser = new NameParser();
-        $parser->parse('The Rev. Mark Williams');
+        $result = $parser->parse('The Rev. Mark Williams');
 
-        $this->assertEquals('Rev.', $parser->getSalutation());
-        $this->assertEquals('The', $parser->getFirstname());
-        $this->assertEquals('Mark', $parser->getMiddlename());
-        $this->assertEquals('Williams', $parser->getLastname());
+        $this->assertEquals('Rev.', $result->getSalutation());
+        $this->assertEquals('The', $result->getFirstname());
+        $this->assertEquals('Mark', $result->getMiddlename());
+        $this->assertEquals('Williams', $result->getLastname());
     }
 
     /**
@@ -391,11 +377,11 @@ class NameParserTest extends TestCase
     public function testParseSalutationPlusSingleWordThatCouldBeASuffix(): void
     {
         $parser = new NameParser();
-        $parser->parse('Dr Jr');
+        $result = $parser->parse('Dr Jr');
 
-        $this->assertEquals('Dr.', $parser->getSalutation());
-        $this->assertNull($parser->getFirstname());
-        $this->assertEquals('Jr', $parser->getLastname());
+        $this->assertEquals('Dr.', $result->getSalutation());
+        $this->assertNull($result->getFirstname());
+        $this->assertEquals('Jr', $result->getLastname());
     }
 
     /**
@@ -406,11 +392,11 @@ class NameParserTest extends TestCase
     public function testParseCommaModeLastnamePrefixInFirstSegment(): void
     {
         $parser = new NameParser();
-        $parser->parse('van Allen, James');
+        $result = $parser->parse('van Allen, James');
 
-        $this->assertEquals('James', $parser->getFirstname());
-        $this->assertEquals('van', $parser->getLastnamePrefix());
-        $this->assertEquals('Allen', $parser->getLastname());
+        $this->assertEquals('James', $result->getFirstname());
+        $this->assertEquals('van', $result->getLastnamePrefix());
+        $this->assertEquals('Allen', $result->getLastname());
     }
 
     /**
@@ -422,11 +408,11 @@ class NameParserTest extends TestCase
     public function testParseCommaModeCompoundLastnameLeftoverIsNotLost(): void
     {
         $parser = new NameParser();
-        $parser->parse('Garcia Marquez, Gabriel');
+        $result = $parser->parse('Garcia Marquez, Gabriel');
 
-        $this->assertEquals('Gabriel', $parser->getFirstname());
-        $this->assertEquals('Garcia', $parser->getMiddlename());
-        $this->assertEquals('Marquez', $parser->getLastname());
+        $this->assertEquals('Gabriel', $result->getFirstname());
+        $this->assertEquals('Garcia', $result->getMiddlename());
+        $this->assertEquals('Marquez', $result->getLastname());
     }
 
     /**
@@ -436,11 +422,11 @@ class NameParserTest extends TestCase
     public function testParseCommaModeThirdSegmentNonSuffixIsNotLost(): void
     {
         $parser = new NameParser();
-        $parser->parse('Smith, John, Michael');
+        $result = $parser->parse('Smith, John, Michael');
 
-        $this->assertEquals('John', $parser->getFirstname());
-        $this->assertEquals('Michael', $parser->getMiddlename());
-        $this->assertEquals('Smith', $parser->getLastname());
+        $this->assertEquals('John', $result->getFirstname());
+        $this->assertEquals('Michael', $result->getMiddlename());
+        $this->assertEquals('Smith', $result->getLastname());
     }
 
     /**
@@ -450,11 +436,11 @@ class NameParserTest extends TestCase
     public function testParseCommaModeFourthSegmentIsNotLost(): void
     {
         $parser = new NameParser();
-        $parser->parse('Smith, John, PhD, Esq');
+        $result = $parser->parse('Smith, John, PhD, Esq');
 
-        $this->assertEquals('John', $parser->getFirstname());
-        $this->assertEquals('Smith', $parser->getLastname());
-        $this->assertEquals('PhD Esq', $parser->getSuffix());
+        $this->assertEquals('John', $result->getFirstname());
+        $this->assertEquals('Smith', $result->getLastname());
+        $this->assertEquals('PhD Esq', $result->getSuffix());
     }
 
     /**
@@ -464,24 +450,24 @@ class NameParserTest extends TestCase
      */
     public function testParseAllCapsDoesNotShredLastnamePrefixIntoInitials(): void
     {
-        $deLuca = new NameParser();
-        $deLuca->parse('JAMES DE LUCA');
-        $this->assertNull($deLuca->getInitials());
-        $this->assertEquals('de', $deLuca->getLastnamePrefix());
-        $this->assertEquals('Luca', $deLuca->getLastname());
+        $deLuca       = new NameParser();
+        $deLucaResult = $deLuca->parse('JAMES DE LUCA');
+        $this->assertNull($deLucaResult->getInitials());
+        $this->assertEquals('de', $deLucaResult->getLastnamePrefix());
+        $this->assertEquals('Luca', $deLucaResult->getLastname());
 
-        $stJohn = new NameParser();
-        $stJohn->parse('MARY ST JOHN');
-        $this->assertNull($stJohn->getInitials());
-        $this->assertEquals('St.', $stJohn->getLastnamePrefix());
-        $this->assertEquals('John', $stJohn->getLastname());
+        $stJohn       = new NameParser();
+        $stJohnResult = $stJohn->parse('MARY ST JOHN');
+        $this->assertNull($stJohnResult->getInitials());
+        $this->assertEquals('St.', $stJohnResult->getLastnamePrefix());
+        $this->assertEquals('John', $stJohnResult->getLastname());
 
-        $deLaCruz = new NameParser();
-        $deLaCruz->parse('JOSE M DE LA CRUZ JR');
-        $this->assertEquals('M', $deLaCruz->getInitials());
-        $this->assertEquals('de la', $deLaCruz->getLastnamePrefix());
-        $this->assertEquals('Cruz', $deLaCruz->getLastname());
-        $this->assertEquals('Jr', $deLaCruz->getSuffix());
+        $deLaCruz       = new NameParser();
+        $deLaCruzResult = $deLaCruz->parse('JOSE M DE LA CRUZ JR');
+        $this->assertEquals('M', $deLaCruzResult->getInitials());
+        $this->assertEquals('de la', $deLaCruzResult->getLastnamePrefix());
+        $this->assertEquals('Cruz', $deLaCruzResult->getLastname());
+        $this->assertEquals('Jr', $deLaCruzResult->getSuffix());
     }
 
     /**
@@ -491,14 +477,14 @@ class NameParserTest extends TestCase
      */
     public function testParseNormalizesAccentedMonotoneCaseWords(): void
     {
-        $lowercase = new NameParser();
-        $lowercase->parse('etna übel');
-        $this->assertEquals('Übel', $lowercase->getLastname());
+        $lowercase       = new NameParser();
+        $lowercaseResult = $lowercase->parse('etna übel');
+        $this->assertEquals('Übel', $lowercaseResult->getLastname());
 
-        $uppercase = new NameParser();
-        $uppercase->parse('JOSÉ GARCÍA');
-        $this->assertEquals('José', $uppercase->getFirstname());
-        $this->assertEquals('García', $uppercase->getLastname());
+        $uppercase       = new NameParser();
+        $uppercaseResult = $uppercase->parse('JOSÉ GARCÍA');
+        $this->assertEquals('José', $uppercaseResult->getFirstname());
+        $this->assertEquals('García', $uppercaseResult->getLastname());
     }
 
     /**
@@ -510,12 +496,12 @@ class NameParserTest extends TestCase
     {
         $parser = new NameParser();
         $parser->parse('Dr. John Smith Jr.');
-        $parser->parse('Mrs. Jane Doe Sr.');
+        $result = $parser->parse('Mrs. Jane Doe Sr.');
 
-        $this->assertEquals('Mrs.', $parser->getSalutation());
-        $this->assertEquals('Jane', $parser->getFirstname());
-        $this->assertEquals('Doe', $parser->getLastname());
-        $this->assertEquals('Sr', $parser->getSuffix());
+        $this->assertEquals('Mrs.', $result->getSalutation());
+        $this->assertEquals('Jane', $result->getFirstname());
+        $this->assertEquals('Doe', $result->getLastname());
+        $this->assertEquals('Sr', $result->getSuffix());
     }
 
     public function testCleanNormalizesWhitespace(): void
