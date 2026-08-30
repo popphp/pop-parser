@@ -3,6 +3,7 @@
 namespace Pop\Parser\Test\Address;
 
 use Pop\Parser\Address\AddressParser;
+use Pop\Parser\Address\AddressResult;
 use Pop\Parser\Exception;
 use PHPUnit\Framework\TestCase;
 
@@ -372,6 +373,63 @@ class AddressParserTest extends TestCase
         $this->assertEquals('62704', $result->getPostalCode());
     }
 
+    /**
+     * Regression test: an all-uppercase or all-lowercase street name and city get
+     * title-cased, the same treatment NameParser already applies to name fields.
+     */
+    public function testParseNormalizesMonotoneCaseStreetNameAndCity(): void
+    {
+        $allCaps       = new AddressParser();
+        $allCapsResult = $allCaps->parse('123 MAIN ST, SPRINGFIELD, IL 62704');
+        $this->assertEquals('Main', $allCapsResult->getStreetName(false));
+        $this->assertEquals('Springfield', $allCapsResult->getCity());
+
+        $lowercase       = new AddressParser();
+        $lowercaseResult = $lowercase->parse('123 main st, springfield, il 62704');
+        $this->assertEquals('Main', $lowercaseResult->getStreetName(false));
+        $this->assertEquals('Springfield', $lowercaseResult->getCity());
+    }
+
+    /**
+     * Regression test: "Mc" is a reliable surname/place-prefix marker in a monotone-case
+     * city, so the letter right after it gets capitalized too.
+     */
+    public function testParseCapitalizesLetterAfterMcPrefixInCity(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('123 Main St, MCKEESPORT, PA 15132');
+
+        $this->assertEquals('McKeesport', $result->getCity());
+    }
+
+    /**
+     * Regression test: casing normalization must never touch postal code, state code,
+     * country code, route type, or direction - only street name and city.
+     */
+    public function testParseCasingNormalizationDoesNotTouchCanonicalFields(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('1600 PENNSYLVANIA AVENUE NW, WASHINGTON, DC 20500, US');
+
+        $this->assertEquals('NW', $result->getDirection());
+        $this->assertEquals('AVENUE', $result->getRouteType());
+        $this->assertEquals('DC', $result->getStateCode());
+        $this->assertEquals('20500', $result->getPostalCode());
+        $this->assertEquals('US', $result->getCountry());
+    }
+
+    /**
+     * Regression test: a street name/city already in mixed case is left exactly as typed.
+     */
+    public function testParsePreservesMixedCaseStreetNameAndCity(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('789 MacArthur Blvd, DeSoto, TX 75115');
+
+        $this->assertEquals('MacArthur', $result->getStreetName(false));
+        $this->assertEquals('DeSoto', $result->getCity());
+    }
+
     public function testToArrayReturnsAllParsedFields(): void
     {
         $parser = new AddressParser();
@@ -389,7 +447,58 @@ class AddressParserTest extends TestCase
             'stateName'    => 'Illinois',
             'stateCode'    => 'IL',
             'country'      => 'US',
+            'confidence'   => 1.0,
         ], $result->toArray());
+    }
+
+    public function testConfidenceDefaultsToFullConfidenceForAClearAddress(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('123 Main St, Springfield, IL 62704');
+
+        $this->assertEquals(1.0, $result->getConfidence());
+        $this->assertTrue($result->isConfident());
+    }
+
+    /**
+     * Regression test: the comma-less street/city-hybrid route-boundary heuristic is a
+     * guess relative to a comma-anchored split, so using it lowers confidence.
+     */
+    public function testConfidenceIsLoweredWhenRouteBoundaryHeuristicIsUsed(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('2 Rodeo Dr Beverly Hills CA 90210');
+
+        $this->assertEquals(0.75, $result->getConfidence());
+    }
+
+    /**
+     * Regression test: falling back to the first line as the street line (no line had
+     * strong street evidence) is a default, not a resolved match, so it lowers confidence.
+     */
+    public function testConfidenceIsLoweredWhenNoLineHasStrongStreetEvidence(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('Broadway, 4th Floor, New York, NY 10001');
+
+        $this->assertEquals(0.75, $result->getConfidence());
+    }
+
+    public function testConfidenceIsLoweredWhenNoPostalCodeIsFound(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('123 Main St, Springfield, IL');
+
+        $this->assertEquals(0.75, $result->getConfidence());
+    }
+
+    public function testConfidenceIsLoweredWhenPostalCodeFoundButStateIsNot(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse('123 Main St, Springfield, ZZ 62704');
+
+        $this->assertNull($result->getStateCode());
+        $this->assertEquals(0.75, $result->getConfidence());
     }
 
     public function testGetFullAddressWithStateCode(): void
@@ -436,6 +545,47 @@ class AddressParserTest extends TestCase
             'direction'    => 'N',
             'unit'         => 'Apt 3B',
         ], $result);
+    }
+
+    /**
+     * Dirty-input corpus: doubled delimiters, stray leading/trailing commas, and irregular
+     * whitespace must never crash the parser, whatever they end up parsing to.
+     */
+    public function testParseDoesNotCrashOnDirtyInput(): void
+    {
+        $inputs = [
+            '123 Main St,, Springfield,,  IL 62704',
+            ' , 123 Main St, Springfield, IL 62704 , ',
+            '123   Main    St,   Springfield,   IL   62704',
+            '123 Main St,,,',
+            ',,',
+            '???',
+            "123 Main St\t\tSpringfield,  IL  62704",
+            '123 Main St, Springfield, IL 62704,,',
+            ',123 Main St, Springfield, IL 62704',
+        ];
+
+        foreach ($inputs as $input) {
+            $parser = new AddressParser();
+            $result = $parser->parse($input);
+            $this->assertInstanceOf(AddressResult::class, $result);
+        }
+    }
+
+    /**
+     * Regression test: doubled/trailing commas around an otherwise well-formed address must
+     * not prevent it from parsing correctly - the extra empty segments are simply dropped.
+     */
+    public function testParseWithDoubledOrLeadingCommasStillParsesCorrectly(): void
+    {
+        $parser = new AddressParser();
+        $result = $parser->parse(' , 123 Main St, Springfield, IL 62704 , ');
+
+        $this->assertEquals('123', $result->getStreetNumber());
+        $this->assertEquals('Main', $result->getStreetName(false));
+        $this->assertEquals('Springfield', $result->getCity());
+        $this->assertEquals('IL', $result->getStateCode());
+        $this->assertEquals('62704', $result->getPostalCode());
     }
 
     public function testCleanNormalizesWhitespaceAndSplitsOnDelimiters(): void

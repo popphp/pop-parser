@@ -69,6 +69,7 @@ class NameParser extends AbstractParser
             'lastnamePrefix' => null,
             'lastname'       => null,
             'suffix'         => null,
+            'credentials'    => null,
         ];
         $initialsQueue = [];
 
@@ -91,6 +92,9 @@ class NameParser extends AbstractParser
 
         $this->finalizeInitials($fields, $initialsQueue);
 
+        $fields['confidence'] = $this->calculateConfidence($fields['confidenceSignalCount'] ?? 0);
+        unset($fields['confidenceSignalCount']);
+
         $this->result = new NameResult($fields);
 
         return $this->result;
@@ -110,19 +114,32 @@ class NameParser extends AbstractParser
     /**
      * Tokenize method
      *
+     * Splits on whitespace and drops any resulting empty tokens - not just the ordinary "no
+     * internal double spaces" case, but the edge case where $name is itself empty (e.g. an
+     * empty comma-mode segment from a leading/trailing/doubled comma, like ",John Smith,"),
+     * where preg_split would otherwise yield a single spurious "" token instead of no tokens
+     * at all, which downstream steps would then treat as a real (blank) word to claim.
+     *
      * @param  string $name
      * @return array
      */
     protected function tokenize(string $name): array
     {
-        return preg_split('/\s+/', trim($name));
+        return array_values(array_filter(preg_split('/\s+/', trim($name)), fn($token) => $token !== ''));
     }
 
     /**
      * Normalize the case of a single word: an all-uppercase or all-lowercase word gets
      * title-cased ("MACDONALD" / "macdonald" -> "Macdonald"); a word with any existing
      * mixed case (e.g. "MacDonald", "McDonald", "O'Brien") is left exactly as typed, since
-     * that mixed case is almost always deliberate.
+     * that mixed case is almost always deliberate. "O'Brien"-style words are already handled
+     * correctly by the title-casing above (the apostrophe splits it into two letter-runs,
+     * each capitalized independently) with no extra logic needed. "Mc" gets one further,
+     * explicit fix-up: capitalize the letter right after it ("Mcdonald" -> "McDonald"), since
+     * it's a reliable surname-prefix marker in English with very few false positives. "Mac" is
+     * deliberately NOT special-cased the same way - it's also the start of many ordinary
+     * names/words ("Macy", "Mack", "Macon") where blindly capitalizing the next letter would
+     * be wrong more often than right.
      *
      * @param  string $word
      * @return string
@@ -132,9 +149,13 @@ class NameParser extends AbstractParser
         $stripped = str_replace('.', '', $word);
 
         if (($stripped === mb_strtoupper($stripped)) || ($stripped === mb_strtolower($stripped))) {
-            return preg_replace_callback('/\p{L}+/u', function ($matches) {
+            $titled = preg_replace_callback('/\p{L}+/u', function ($matches) {
                 return mb_convert_case($matches[0], MB_CASE_TITLE);
             }, $word);
+
+            return preg_replace_callback('/\bMc(\p{L})/u', function ($matches) {
+                return 'Mc' . mb_strtoupper($matches[1]);
+            }, $titled);
         }
 
         return $word;
@@ -221,7 +242,10 @@ class NameParser extends AbstractParser
      * non-empty leftover, it becomes firstname (since every name needs one); after that,
      * leftovers are appended to middlename. This is a deliberate difference from
      * theiconic/name-parser, which can silently drop an unrecognized leading word (e.g. "The"
-     * in "The Rev. Mark Williams") - here nothing is ever discarded.
+     * in "The Rev. Mark Williams") - here nothing is ever discarded. That second case (a
+     * leftover appended to middlename) is a confidence signal - it means content exists that
+     * didn't fit any recognized category and had to be defaulted into middlename, e.g. the
+     * "Garcia" in "Garcia Marquez, Gabriel" not being clearly lastname or given-name content.
      *
      * @param  array $tokens
      * @param  array $fields
@@ -238,7 +262,8 @@ class NameParser extends AbstractParser
         if ($fields['firstname'] === null) {
             $fields['firstname'] = $text;
         } else {
-            $fields['middlename'] = trim(($fields['middlename'] ?? '') . ' ' . $text);
+            $fields['middlename']            = trim(($fields['middlename'] ?? '') . ' ' . $text);
+            $fields['confidenceSignalCount'] = ($fields['confidenceSignalCount'] ?? 0) + 1;
         }
     }
 
@@ -246,7 +271,8 @@ class NameParser extends AbstractParser
      * If no raw token ever became firstname but one or more initials were set aside, promote
      * the FIRST claimed initial back to firstname - handles "J. B. Hunt" (firstname="J.",
      * initials="B.", lastname="Hunt"), since a name consisting only of initials plus a
-     * lastname still needs a firstname.
+     * lastname still needs a firstname. That promotion is itself a confidence signal - the
+     * name never actually supplied a real firstname token, just an initial standing in for one.
      *
      * @param  array $fields
      * @param  array $initialsQueue
@@ -259,8 +285,9 @@ class NameParser extends AbstractParser
         }
 
         if ($fields['firstname'] === null) {
-            $promoted            = array_shift($initialsQueue);
-            $fields['firstname'] = $this->normalizeCase($promoted);
+            $promoted                        = array_shift($initialsQueue);
+            $fields['firstname']             = $this->normalizeCase($promoted);
+            $fields['confidenceSignalCount'] = ($fields['confidenceSignalCount'] ?? 0) + 1;
         }
 
         if (!empty($initialsQueue)) {
@@ -385,9 +412,12 @@ class NameParser extends AbstractParser
     /**
      * Extract suffix
      *
-     * Scans from the end backward while trailing tokens keep matching the suffix list,
-     * stopping before it would eat into the reserved leading tokens (or, in single-part
-     * mode, matches only when exactly one token remains).
+     * Scans from the end backward while trailing tokens keep matching either the generational
+     * suffix list or the professional credentials list, stopping before it would eat into the
+     * reserved leading tokens (or, in single-part mode, matches only when exactly one token
+     * remains). The two are kept in separate fields ("Von Fange III, PhD" -> suffix "III",
+     * credentials "PhD"), each preserving its own relative order even when the two are
+     * interleaved among the trailing tokens.
      *
      * @param  array      $tokens
      * @param  NameValues $nameValues
@@ -406,12 +436,17 @@ class NameParser extends AbstractParser
         bool $reserveLastToken = false
     ): array
     {
-        $suffixes = $nameValues->getSuffixes();
+        $suffixes    = $nameValues->getSuffixes();
+        $credentials = $nameValues->getCredentials();
 
         if ($matchSinglePart && (count($tokens) === 1)) {
             $key = strtolower(str_replace('.', '', $tokens[0]));
             if (isset($suffixes[$key])) {
                 $fields['suffix'] = trim(($fields['suffix'] ?? '') . ' ' . $suffixes[$key]);
+                return [];
+            }
+            if (isset($credentials[$key])) {
+                $fields['credentials'] = trim(($fields['credentials'] ?? '') . ' ' . $credentials[$key]);
                 return [];
             }
             return $tokens;
@@ -423,17 +458,29 @@ class NameParser extends AbstractParser
 
         while ($index >= $stop) {
             $key = strtolower(str_replace('.', '', $tokens[$index]));
-            if (!isset($suffixes[$key])) {
+            if (isset($suffixes[$key])) {
+                array_unshift($claimed, ['type' => 'suffix', 'value' => $suffixes[$key]]);
+            } else if (isset($credentials[$key])) {
+                array_unshift($claimed, ['type' => 'credentials', 'value' => $credentials[$key]]);
+            } else {
                 break;
             }
-            array_unshift($claimed, $suffixes[$key]);
             $index--;
         }
 
         if (!empty($claimed)) {
             $count = count($claimed);
             array_splice($tokens, count($tokens) - $count, $count);
-            $fields['suffix'] = trim(($fields['suffix'] ?? '') . ' ' . implode(' ', $claimed));
+
+            $suffixParts = array_column(array_filter($claimed, fn($claim) => $claim['type'] === 'suffix'), 'value');
+            if (!empty($suffixParts)) {
+                $fields['suffix'] = trim(($fields['suffix'] ?? '') . ' ' . implode(' ', $suffixParts));
+            }
+
+            $credentialParts = array_column(array_filter($claimed, fn($claim) => $claim['type'] === 'credentials'), 'value');
+            if (!empty($credentialParts)) {
+                $fields['credentials'] = trim(($fields['credentials'] ?? '') . ' ' . implode(' ', $credentialParts));
+            }
         }
 
         return array_values($tokens);

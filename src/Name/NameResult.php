@@ -78,6 +78,12 @@ class NameResult extends AbstractResult
     protected ?string $suffix = null;
 
     /**
+     * Credentials
+     * @var ?string
+     * */
+    protected ?string $credentials = null;
+
+    /**
      * Constructor
      *
      * @param  array $name
@@ -92,6 +98,8 @@ class NameResult extends AbstractResult
         $this->lastnamePrefix = $name['lastnamePrefix'] ?? null;
         $this->lastname       = $name['lastname'] ?? null;
         $this->suffix         = $name['suffix'] ?? null;
+        $this->credentials    = $name['credentials'] ?? null;
+        $this->confidence     = $name['confidence'] ?? 1.0;
     }
 
     /**
@@ -177,6 +185,16 @@ class NameResult extends AbstractResult
     public function getSuffix(): ?string
     {
         return $this->suffix;
+    }
+
+    /**
+     * Method to get credentials
+     *
+     * @return ?string
+     */
+    public function getCredentials(): ?string
+    {
+        return $this->credentials;
     }
 
     /**
@@ -282,6 +300,16 @@ class NameResult extends AbstractResult
     }
 
     /**
+     * Has credentials
+     *
+     * @return bool
+     */
+    public function hasCredentials(): bool
+    {
+        return !empty($this->credentials);
+    }
+
+    /**
      * To array method
      *
      * @return array
@@ -297,6 +325,8 @@ class NameResult extends AbstractResult
             'lastnamePrefix' => $this->lastnamePrefix,
             'lastname'       => $this->lastname,
             'suffix'         => $this->suffix,
+            'credentials'    => $this->credentials,
+            'confidence'     => $this->confidence,
         ];
     }
 
@@ -314,6 +344,7 @@ class NameResult extends AbstractResult
             $this->lastnamePrefix,
             $this->lastname,
             $this->suffix,
+            $this->credentials,
         ]);
 
         return implode(' ', $parts);

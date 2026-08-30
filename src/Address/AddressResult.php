@@ -137,6 +137,7 @@ class AddressResult extends AbstractResult
         $this->stateName         = $address['stateName'] ?? null;
         $this->stateCode         = $address['stateCode'] ?? null;
         $this->country           = $address['country'] ?? null;
+        $this->confidence        = $address['confidence'] ?? 1.0;
     }
 
     /**
@@ -460,6 +461,7 @@ class AddressResult extends AbstractResult
             'stateName'    => $this->stateName,
             'stateCode'    => $this->stateCode,
             'country'      => $this->country,
+            'confidence'   => $this->confidence,
         ];
     }
 

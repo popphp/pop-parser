@@ -50,7 +50,7 @@ class NameValues
     ];
 
     /**
-     * A list of name suffixes
+     * A list of generational name suffixes
      * @var array $suffixes
      * */
     protected static array $suffixes = [
@@ -63,13 +63,33 @@ class NameValues
         'iii'    => 'III',
         'iv'     => 'IV',
         'v'      => 'V',
-        'phd'    => 'PhD',
-        'md'     => 'MD',
-        'esq'    => 'Esq',
-        'jd'     => 'JD',
         '1st'    => '1st',
         '2nd'    => '2nd',
         '3rd'    => '3rd',
+    ];
+
+    /**
+     * A list of professional credentials/degrees, kept separate from generational suffixes
+     * so e.g. "Anthony Von Fange III, PhD" can expose "III" and "PhD" independently
+     * @var array $credentials
+     * */
+    protected static array $credentials = [
+        'phd'  => 'PhD',
+        'md'   => 'MD',
+        'do'   => 'DO',
+        'esq'  => 'Esq',
+        'jd'   => 'JD',
+        'mba'  => 'MBA',
+        'rn'   => 'RN',
+        'dds'  => 'DDS',
+        'dvm'  => 'DVM',
+        'cpa'  => 'CPA',
+        'cfa'  => 'CFA',
+        'pe'   => 'PE',
+        'rph'  => 'RPh',
+        'dnp'  => 'DNP',
+        'psyd' => 'PsyD',
+        'edd'  => 'EdD',
     ];
 
     /**
@@ -125,6 +145,16 @@ class NameValues
     public function getSuffixes(): array
     {
         return self::$suffixes;
+    }
+
+    /**
+     * Getter method for accessing the credentials list
+     *
+     * @return array
+     */
+    public function getCredentials(): array
+    {
+        return self::$credentials;
     }
 
     /**

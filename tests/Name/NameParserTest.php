@@ -173,6 +173,49 @@ class NameParserTest extends TestCase
         $this->assertEquals('MacDonald', $mixedCaseResult->getLastname());
     }
 
+    /**
+     * Regression test: "Mc" is a reliable surname-prefix marker, so a monotone-case "Mc"
+     * name gets the letter right after it capitalized too, not just the leading "M".
+     */
+    public function testParseCapitalizesLetterAfterMcPrefix(): void
+    {
+        $allCaps       = new NameParser();
+        $allCapsResult = $allCaps->parse('JAMES MCDONALD');
+        $this->assertEquals('McDonald', $allCapsResult->getLastname());
+
+        $lowercase       = new NameParser();
+        $lowercaseResult = $lowercase->parse('james mcdonald');
+        $this->assertEquals('McDonald', $lowercaseResult->getLastname());
+    }
+
+    /**
+     * "Mac" is deliberately NOT given the same treatment as "Mc" - it's also the start of
+     * many ordinary names ("Macy", "Mack") where blindly capitalizing the next letter would
+     * misfire more often than it would help.
+     */
+    public function testParseDoesNotCapitalizeLetterAfterMacPrefix(): void
+    {
+        $parser = new NameParser();
+        $result = $parser->parse('OLD MACY');
+
+        $this->assertEquals('Macy', $result->getLastname());
+    }
+
+    /**
+     * Regression test: an apostrophe-prefixed monotone-case surname title-cases correctly on
+     * both sides of the apostrophe without any extra prefix-specific logic.
+     */
+    public function testParseTitleCasesApostrophePrefixedSurname(): void
+    {
+        $allCaps       = new NameParser();
+        $allCapsResult = $allCaps->parse('PATRICK OBRIEN');
+        $this->assertEquals('Obrien', $allCapsResult->getLastname());
+
+        $withApostrophe       = new NameParser();
+        $withApostropheResult = $withApostrophe->parse("PATRICK O'BRIEN");
+        $this->assertEquals("O'Brien", $withApostropheResult->getLastname());
+    }
+
     public function testParseLastnamePrefix(): void
     {
         $parser = new NameParser();
@@ -280,7 +323,8 @@ class NameParserTest extends TestCase
         $this->assertEquals('Anthony', $result->getFirstname());
         $this->assertEquals('von', $result->getLastnamePrefix());
         $this->assertEquals('Fange', $result->getLastname());
-        $this->assertEquals('III PhD', $result->getSuffix());
+        $this->assertEquals('III', $result->getSuffix());
+        $this->assertEquals('PhD', $result->getCredentials());
     }
 
     /**
@@ -297,7 +341,8 @@ class NameParserTest extends TestCase
         $this->assertEquals('John', $result->getFirstname());
         $this->assertEquals('Michael', $result->getMiddlename());
         $this->assertEquals('Smith', $result->getLastname());
-        $this->assertEquals('MD', $result->getSuffix());
+        $this->assertNull($result->getSuffix());
+        $this->assertEquals('MD', $result->getCredentials());
     }
 
     public function testParseCommaModeWithInitial(): void
@@ -348,7 +393,78 @@ class NameParserTest extends TestCase
             'lastnamePrefix' => 'von',
             'lastname'       => 'Fange',
             'suffix'         => 'III',
+            'credentials'    => null,
+            'confidence'     => 1.0,
         ], $result->toArray());
+    }
+
+    public function testConfidenceDefaultsToFullConfidenceForAClearName(): void
+    {
+        $parser = new NameParser();
+        $result = $parser->parse('James Norrington');
+
+        $this->assertEquals(1.0, $result->getConfidence());
+        $this->assertTrue($result->isConfident());
+    }
+
+    /**
+     * Regression test: promoting a queued initial to firstname (no real firstname token
+     * was ever given) lowers confidence, since it's a stand-in rather than an actual match.
+     */
+    public function testConfidenceIsLoweredWhenAnInitialIsPromotedToFirstname(): void
+    {
+        $parser = new NameParser();
+        $result = $parser->parse('J. B. Hunt');
+
+        $this->assertEquals(0.75, $result->getConfidence());
+        $this->assertTrue($result->isConfident());
+        $this->assertFalse($result->isConfident(0.8));
+    }
+
+    /**
+     * Regression test: a comma-mode leftover absorbed into middlename (content that didn't
+     * fit any recognized category) lowers confidence.
+     */
+    public function testConfidenceIsLoweredWhenCommaModeLeftoverIsAbsorbedIntoMiddlename(): void
+    {
+        $parser = new NameParser();
+        $result = $parser->parse('Garcia Marquez, Gabriel');
+
+        $this->assertEquals(0.75, $result->getConfidence());
+    }
+
+    public function testParseSpaceSeparatedCredentialSuffixGoesToCredentialsNotSuffix(): void
+    {
+        $parser = new NameParser();
+        $result = $parser->parse('John Smith MD');
+
+        $this->assertEquals('John', $result->getFirstname());
+        $this->assertEquals('Smith', $result->getLastname());
+        $this->assertNull($result->getSuffix());
+        $this->assertEquals('MD', $result->getCredentials());
+        $this->assertTrue($result->hasCredentials());
+    }
+
+    /**
+     * Regression test: a generational suffix and a credential trailing together must each
+     * land in their own field, in the order they appeared, not merged into one string.
+     */
+    public function testParseMixedGenerationalSuffixAndCredentialsAreSplitButOrderPreserved(): void
+    {
+        $parser = new NameParser();
+        $result = $parser->parse('Edward Dale Smith III MD');
+
+        $this->assertEquals('III', $result->getSuffix());
+        $this->assertEquals('MD', $result->getCredentials());
+    }
+
+    public function testHasCredentialsDefaultsToFalseWhenNoneFound(): void
+    {
+        $parser = new NameParser();
+        $result = $parser->parse('James Norrington');
+
+        $this->assertFalse($result->hasCredentials());
+        $this->assertNull($result->getCredentials());
     }
 
     /**
@@ -440,7 +556,8 @@ class NameParserTest extends TestCase
 
         $this->assertEquals('John', $result->getFirstname());
         $this->assertEquals('Smith', $result->getLastname());
-        $this->assertEquals('PhD Esq', $result->getSuffix());
+        $this->assertNull($result->getSuffix());
+        $this->assertEquals('PhD Esq', $result->getCredentials());
     }
 
     /**
@@ -502,6 +619,48 @@ class NameParserTest extends TestCase
         $this->assertEquals('Jane', $result->getFirstname());
         $this->assertEquals('Doe', $result->getLastname());
         $this->assertEquals('Sr', $result->getSuffix());
+    }
+
+    /**
+     * Regression test: a leading/trailing/doubled comma leaves an empty comma-mode segment
+     * ("" between two commas, or before a leading comma). That must be treated as no tokens
+     * at all - not a single blank word claimed as lastname - so a field that was never
+     * actually given content stays null rather than becoming an empty string.
+     */
+    public function testParseWithLeadingOrDoubledCommaLeavesUnaffectedFieldsNull(): void
+    {
+        $leading       = new NameParser();
+        $leadingResult = $leading->parse(',John Smith,');
+        $this->assertEquals('John', $leadingResult->getFirstname());
+        $this->assertNull($leadingResult->getLastname());
+
+        $onlyCommas       = new NameParser();
+        $onlyCommasResult = $onlyCommas->parse(',,');
+        $this->assertNull($onlyCommasResult->getFirstname());
+        $this->assertNull($onlyCommasResult->getLastname());
+    }
+
+    /**
+     * Dirty-input corpus: doubled delimiters, irregular whitespace, and trailing punctuation
+     * must never crash the parser, whatever they end up parsing to.
+     */
+    public function testParseDoesNotCrashOnDirtyInput(): void
+    {
+        $inputs = [
+            'John,, Smith',
+            'John   Smith',
+            'John Smith,,',
+            'John Smith .',
+            "John\t\tSmith",
+            '!!!',
+            'John Smith  ,  Jr  ,,  ',
+        ];
+
+        foreach ($inputs as $input) {
+            $parser = new NameParser();
+            $result = $parser->parse($input);
+            $this->assertInstanceOf(\Pop\Parser\Name\NameResult::class, $result);
+        }
     }
 
     public function testCleanNormalizesWhitespace(): void

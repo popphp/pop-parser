@@ -124,4 +124,24 @@ abstract class AbstractParser implements ParserInterface
         return $this->errorMessage;
     }
 
+    /**
+     * Turn a count of ambiguity signals collected during parse() into a 0.0-1.0 confidence
+     * score: no signals is full confidence; each signal is a fixed, equal-weight deduction,
+     * floored so a heavily-ambiguous parse never reads as fully unreliable (0.0). Shared by
+     * both concrete parsers rather than duplicated, since the formula itself doesn't depend
+     * on what a "signal" means to a particular parser - only counting what qualifies as one
+     * is parser-specific.
+     *
+     * @param  int $signalCount
+     * @return float
+     */
+    protected function calculateConfidence(int $signalCount): float
+    {
+        if ($signalCount <= 0) {
+            return 1.0;
+        }
+
+        return max(0.2, 1.0 - (0.25 * $signalCount));
+    }
+
 }

@@ -72,4 +72,13 @@ class AbstractParserTest extends TestCase
         $this->assertEquals('Something went wrong.', $parser->getErrorMessage());
     }
 
+    public function testResultConfidenceDefaultsToFullConfidence(): void
+    {
+        $parser = new ConcreteParser('baz');
+        $result = $parser->parse();
+
+        $this->assertEquals(1.0, $result->getConfidence());
+        $this->assertTrue($result->isConfident());
+    }
+
 }

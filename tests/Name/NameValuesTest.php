@@ -21,7 +21,17 @@ class NameValuesTest extends TestCase
         $suffixes = (new NameValues())->getSuffixes();
 
         $this->assertEquals('Jr', $suffixes['jr']);
-        $this->assertEquals('PhD', $suffixes['phd']);
+        $this->assertEquals('III', $suffixes['iii']);
+        $this->assertArrayNotHasKey('phd', $suffixes);
+    }
+
+    public function testGetCredentialsContainsExpectedEntries(): void
+    {
+        $credentials = (new NameValues())->getCredentials();
+
+        $this->assertEquals('PhD', $credentials['phd']);
+        $this->assertEquals('MD', $credentials['md']);
+        $this->assertArrayNotHasKey('jr', $credentials);
     }
 
     public function testGetLastnamePrefixesContainsExpectedEntries(): void

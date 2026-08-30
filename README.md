@@ -28,6 +28,11 @@ construct with or without data, call `parse()`, which returns an immutable resul
 (`AddressResult`/`NameResult`) - read the parsed fields off *that* via `get*()`/`has*()` methods,
 `toArray()`, or by casting it to a string. The parser itself holds no parsed fields.
 
+Both results also carry a `getConfidence()` score (0.0-1.0, `isConfident()` for a quick threshold
+check) reflecting how much of the input was confidently matched vs. guessed, and both parsers
+title-case an all-uppercase or all-lowercase field ("MAIN ST" -> "Main St") while leaving any
+existing mixed case exactly as typed.
+
 [Top](#pop-parser)
 
 Install
@@ -126,7 +131,7 @@ $result->toArray();
 //     'streetNumber' => '123', 'streetName' => 'Main', 'routeType' => 'St',
 //     'direction' => null, 'unit' => 'Apt 4B', 'city' => 'Springfield',
 //     'postalCode' => '62704', 'zip4' => null, 'stateName' => 'Illinois',
-//     'stateCode' => 'IL', 'country' => 'US',
+//     'stateCode' => 'IL', 'country' => 'US', 'confidence' => 1.0,
 // ]
 
 (string) $result; // same as getFullAddress()
@@ -136,6 +141,20 @@ Every component getter on `AddressResult` (`getStreetNumber()`, `getStreetName()
 `getDirection()`, `getUnit()`, `getCity()`, `getPostalCode()`, `getZip4()`, `getStateName()`,
 `getStateCode()`, `getCountry()`) has a matching `has*()` method (e.g. `hasUnit()`, `hasZip4()`) that
 returns `true` only when that part was actually found.
+
+### Confidence
+
+```php
+$result->getConfidence();     // 1.0
+$result->isConfident();       // true (default threshold: 0.7)
+$result->isConfident(0.9);    // pass a stricter threshold if you need one
+```
+
+Confidence starts at `1.0` and drops for specific, individually-identifiable situations where the
+parser had to guess rather than resolve something from solid evidence - e.g. no postal code was
+found at all, or a comma-less address needed a heuristic to split the street from the city. An
+address that genuinely has no city (`"123 Main St, IL 62704"`) still parses with full confidence -
+a confident, correct `null` isn't the same as a failed guess.
 
 ### Reference data
 
@@ -229,6 +248,20 @@ $result->getNickname(true); // '(Bob)'
 $result->getLastname();     // 'Smith'
 ```
 
+### Credentials
+
+Professional credentials/degrees (PhD, MD, Esq, JD, MBA, RN, DDS, DVM, CPA, CFA, PE, RPh, DNP,
+PsyD, EdD, DO) are recognized separately from generational suffixes (Jr, Sr, III, ...), even when
+both trail the same name:
+
+```php
+$parser = new NameParser();
+$result = $parser->parse('Anthony Von Fange III, PhD');
+
+$result->getSuffix();      // 'III'
+$result->getCredentials(); // 'PhD'
+```
+
 ### Full name, given name, array output, and string casting
 
 ```php
@@ -239,22 +272,35 @@ $result->toArray();
 // [
 //     'salutation' => null, 'firstname' => 'John', 'initials' => null,
 //     'middlename' => 'Michael', 'nickname' => null, 'lastnamePrefix' => null,
-//     'lastname' => 'Smith', 'suffix' => 'Jr',
+//     'lastname' => 'Smith', 'suffix' => 'Jr', 'credentials' => null, 'confidence' => 1.0,
 // ]
 
-(string) $result; // salutation + given name + nickname + lastname prefix + lastname + suffix
+(string) $result; // salutation + given name + nickname + lastname prefix + lastname + suffix + credentials
 ```
 
 Every component getter on `NameResult` (`getSalutation()`, `getFirstname()`, `getMiddlename()`,
-`getNickname()`, `getInitials()`, `getLastnamePrefix()`, `getLastname()`, `getSuffix()`) has a
-matching `has*()` method (e.g. `hasSuffix()`, `hasNickname()`) that returns `true` only when that
-part was actually found.
+`getNickname()`, `getInitials()`, `getLastnamePrefix()`, `getLastname()`, `getSuffix()`,
+`getCredentials()`) has a matching `has*()` method (e.g. `hasSuffix()`, `hasNickname()`) that
+returns `true` only when that part was actually found.
+
+### Confidence
+
+```php
+$result->getConfidence();  // 1.0
+$result->isConfident();    // true (default threshold: 0.7)
+```
+
+Confidence starts at `1.0` and drops for specific situations where the parser had to guess rather
+than resolve something directly - e.g. a queued initial had to be promoted to `firstname` because
+the name never actually supplied one (`"J. B. Hunt"`), or comma-mode leftover content didn't fit
+any recognized category and had to be defaulted into `middlename`.
 
 ### Reference data
 
 `Pop\Parser\Name\NameValues` exposes the underlying lookup data the parser uses - salutations
-(`getSalutations()`), suffixes (`getSuffixes()`), lastname prefixes (`getLastnamePrefixes()`), and
-recognized nickname-wrapping delimiter pairs (`getNicknameDelimiters()`).
+(`getSalutations()`), generational suffixes (`getSuffixes()`), professional credentials
+(`getCredentials()`), lastname prefixes (`getLastnamePrefixes()`), and recognized
+nickname-wrapping delimiter pairs (`getNicknameDelimiters()`).
 
 ### Errors
 

@@ -87,7 +87,28 @@ class AddressParser extends AbstractParser
 
         $locationResults = $this->extractLocation($remainingLines, $addressValues);
 
-        $this->result = new AddressResult(array_merge($locationResults, $geoResults));
+        // Confidence signals: each represents a specific point where the pipeline had to
+        // guess/default rather than resolve something on solid (punctuation- or
+        // dataset-anchored) evidence. "city === null" is deliberately NOT one of these - an
+        // address that genuinely never included a city (e.g. "123 Main St, IL 62704") is a
+        // confident, correct null, not a guess failure.
+        $signalCount = 0;
+        if ($geoResults['routeBoundaryUsed']) {
+            $signalCount++;
+        }
+        if ($locationResults['primaryLineInferred']) {
+            $signalCount++;
+        }
+        if ($geoResults['postalCode'] === null) {
+            $signalCount++;
+        }
+        if (($geoResults['postalCode'] !== null) && ($geoResults['stateCode'] === null)) {
+            $signalCount++;
+        }
+
+        $this->result = new AddressResult(array_merge($locationResults, $geoResults, [
+            'confidence' => $this->calculateConfidence($signalCount),
+        ]));
 
         return $this->result;
     }
@@ -135,6 +156,47 @@ class AddressParser extends AbstractParser
     }
 
     /**
+     * Normalize the case of a single word: an all-uppercase or all-lowercase word gets
+     * title-cased ("MAIN" / "main" -> "Main"); a word with any existing mixed case is left
+     * exactly as typed, since that mixed case is almost always deliberate. "Mc" gets one
+     * further, explicit fix-up: capitalize the letter right after it ("Mcgregor" ->
+     * "McGregor"), the same treatment applied by NameParser::normalizeCase() and for the same
+     * reason - it's a reliable prefix marker with very few false positives. Only ever applied
+     * to street name / city, never to postal code, state code, country code, route type, or
+     * direction, which must stay exactly as extracted (canonical/abbreviated forms, not prose).
+     *
+     * @param  string $word
+     * @return string
+     */
+    protected function normalizeCase(string $word): string
+    {
+        $stripped = str_replace('.', '', $word);
+
+        if (($stripped === mb_strtoupper($stripped)) || ($stripped === mb_strtolower($stripped))) {
+            $titled = preg_replace_callback('/\p{L}+/u', function ($matches) {
+                return mb_convert_case($matches[0], MB_CASE_TITLE);
+            }, $word);
+
+            return preg_replace_callback('/\bMc(\p{L})/u', function ($matches) {
+                return 'Mc' . mb_strtoupper($matches[1]);
+            }, $titled);
+        }
+
+        return $word;
+    }
+
+    /**
+     * Normalize the case of each word in an array and join them with a space
+     *
+     * @param  array $words
+     * @return string
+     */
+    protected function normalizeWords(array $words): string
+    {
+        return implode(' ', array_map([$this, 'normalizeCase'], $words));
+    }
+
+    /**
      * Extract geo (country, postal code, state and city)
      *
      * Works right-to-left over the tokenized lines, using token *position* rather than
@@ -158,8 +220,9 @@ class AddressParser extends AbstractParser
         $zip4       = null;
         $country    = null;
 
-        $linesProcessed = [];
-        $trimmedLines   = [];
+        $linesProcessed    = [];
+        $trimmedLines      = [];
+        $routeBoundaryUsed = false;
 
         $usStates = $addressValues->getStates('US');
         $caStates = $addressValues->getStates('CA');
@@ -347,7 +410,7 @@ class AddressParser extends AbstractParser
                     if (!empty($before)) {
                         if ($hasPrecedingLine) {
                             // A comma already separates this from the street - it's just city.
-                            $city = implode(' ', $before);
+                            $city = $this->normalizeWords($before);
                         } else {
                             // This line carries city AND (with no comma to separate them)
                             // possibly the street portion too. Find where the street portion
@@ -359,7 +422,8 @@ class AddressParser extends AbstractParser
                             $routeEndIndex = $findRouteBoundary($before);
 
                             if ($routeEndIndex !== null) {
-                                $city = implode(' ', array_slice($before, $routeEndIndex + 1));
+                                $city              = $this->normalizeWords(array_slice($before, $routeEndIndex + 1));
+                                $routeBoundaryUsed = true;
                                 if ($city === '') {
                                     $city = null;
                                 }
@@ -380,7 +444,8 @@ class AddressParser extends AbstractParser
                                 $routeEndIndex = $findRouteBoundary($candidateLine);
 
                                 if ($routeEndIndex !== null) {
-                                    $city = implode(' ', array_slice($candidateLine, $routeEndIndex + 1));
+                                    $city              = $this->normalizeWords(array_slice($candidateLine, $routeEndIndex + 1));
+                                    $routeBoundaryUsed = true;
                                     if ($city === '') {
                                         $city = null;
                                     }
@@ -388,7 +453,7 @@ class AddressParser extends AbstractParser
                                 } else if ((preg_match('/^\d/', $candidateLine[0]) === 1) || $looksLikePoBoxLine($candidateLine)) {
                                     $trimmedLines[$i] = $candidateLine;
                                 } else {
-                                    $city = implode(' ', $candidateLine);
+                                    $city = $this->normalizeWords($candidateLine);
                                 }
 
                                 $linesProcessed[] = $i;
@@ -431,14 +496,15 @@ class AddressParser extends AbstractParser
         }
 
         return [
-            'city'           => $city,
-            'stateName'      => $stateName,
-            'stateCode'      => $stateCode,
-            'postalCode'     => $postalCode,
-            'zip4'           => $zip4,
-            'country'        => $country,
-            'linesProcessed' => $linesProcessed,
-            'trimmedLines'   => $trimmedLines,
+            'city'              => $city,
+            'stateName'         => $stateName,
+            'stateCode'         => $stateCode,
+            'postalCode'        => $postalCode,
+            'zip4'              => $zip4,
+            'country'           => $country,
+            'linesProcessed'    => $linesProcessed,
+            'trimmedLines'      => $trimmedLines,
+            'routeBoundaryUsed' => $routeBoundaryUsed,
         ];
     }
 
@@ -469,7 +535,8 @@ class AddressParser extends AbstractParser
         $isPoBox           = false;
 
         if (empty($lines)) {
-            return compact('streetNumber', 'streetName', 'routeType', 'direction', 'directionPosition', 'unit', 'isPoBox');
+            $primaryLineInferred = false;
+            return compact('streetNumber', 'streetName', 'routeType', 'direction', 'directionPosition', 'unit', 'isPoBox', 'primaryLineInferred');
         }
 
         $unitTypes = array_map('strtoupper', $addressValues->getUnitTypes());
@@ -491,7 +558,8 @@ class AddressParser extends AbstractParser
         // a street - must not be promoted over the true street line just because that line
         // (e.g. "Broadway") has no recognizable route-type suffix of its own. Falls back to
         // the first line when nothing qualifies.
-        $primaryIndex = 0;
+        $primaryIndex        = 0;
+        $primaryLineInferred = true;
         foreach ($lines as $idx => $line) {
             $lastLineIndex = count($line) - 1;
             $looksLikePoBox = (preg_match($poBoxRegex, str_replace(' ', '', $line[0])) === 1)
@@ -499,7 +567,8 @@ class AddressParser extends AbstractParser
             $looksLikeStreet = $looksLikePoBox
                 || ((preg_match('/^\d/', $line[0]) === 1) && isset($routeTypeSet[strtolower(rtrim($line[$lastLineIndex], '.'))]));
             if ($looksLikeStreet) {
-                $primaryIndex = $idx;
+                $primaryIndex        = $idx;
+                $primaryLineInferred = false;
                 break;
             }
         }
@@ -538,26 +607,28 @@ class AddressParser extends AbstractParser
         if ((count($tokens) >= 2) && (preg_match($poBoxRegex, str_replace(' ', '', $tokens[0])) === 1)
             && (preg_match('/^\d+[A-Za-z]?$/', $tokens[1]) === 1)) {
             return [
-                'streetNumber'      => null,
-                'streetName'        => 'PO Box ' . $tokens[1],
-                'routeType'         => null,
-                'direction'         => null,
-                'directionPosition' => null,
-                'unit'              => $unit,
-                'isPoBox'           => true,
+                'streetNumber'        => null,
+                'streetName'          => 'PO Box ' . $tokens[1],
+                'routeType'           => null,
+                'direction'           => null,
+                'directionPosition'   => null,
+                'unit'                => $unit,
+                'isPoBox'             => true,
+                'primaryLineInferred' => $primaryLineInferred,
             ];
         }
         // "PO" "Box" "1234" as three separate tokens (e.g. from "P.O. Box 1234")
         if ((count($tokens) >= 3) && (strcasecmp(str_replace('.', '', $tokens[0]), 'PO') === 0)
             && (strcasecmp($tokens[1], 'Box') === 0) && (preg_match('/^\d+[A-Za-z]?$/', $tokens[2]) === 1)) {
             return [
-                'streetNumber'      => null,
-                'streetName'        => 'PO Box ' . $tokens[2],
-                'routeType'         => null,
-                'direction'         => null,
-                'directionPosition' => null,
-                'unit'              => $unit,
-                'isPoBox'           => true,
+                'streetNumber'        => null,
+                'streetName'          => 'PO Box ' . $tokens[2],
+                'routeType'           => null,
+                'direction'           => null,
+                'directionPosition'   => null,
+                'unit'                => $unit,
+                'isPoBox'             => true,
+                'primaryLineInferred' => $primaryLineInferred,
             ];
         }
 
@@ -622,16 +693,16 @@ class AddressParser extends AbstractParser
         if (!empty($tokens)) {
             if (preg_match('/^\d/', $tokens[0]) === 1) {
                 $streetNumber = $tokens[0];
-                $streetName   = implode(' ', array_slice($tokens, 1));
+                $streetName   = $this->normalizeWords(array_slice($tokens, 1));
             } else {
-                $streetName = implode(' ', $tokens);
+                $streetName = $this->normalizeWords($tokens);
             }
             if ($streetName === '') {
                 $streetName = null;
             }
         }
 
-        return compact('streetNumber', 'streetName', 'routeType', 'direction', 'directionPosition', 'unit', 'isPoBox');
+        return compact('streetNumber', 'streetName', 'routeType', 'direction', 'directionPosition', 'unit', 'isPoBox', 'primaryLineInferred');
     }
 
 }

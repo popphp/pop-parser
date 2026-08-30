@@ -34,4 +34,19 @@ interface ResultInterface
      */
     public function toArray(): array;
 
+    /**
+     * Get confidence score
+     *
+     * @return float
+     */
+    public function getConfidence(): float;
+
+    /**
+     * Whether the confidence score meets or exceeds the given threshold
+     *
+     * @param  float $threshold
+     * @return bool
+     */
+    public function isConfident(float $threshold = 0.7): bool;
+
 }
